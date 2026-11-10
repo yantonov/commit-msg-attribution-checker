@@ -8,6 +8,7 @@ Reject a commit message that records LLM-agent attribution. Installed as a
 - [Motivation](#motivation)
 - [Install as a hook](#install-as-a-hook)
 - [Or register it with krok](#or-register-it-with-krok)
+- [License](#license)
 
 ## Motivation
 
@@ -53,3 +54,7 @@ wrapper passes the message file to the tool the same way, so the exit status
 still aborts the commit.
 
 krok runs under the `sh` git ships, which on Windows means Git Bash.
+
+## License
+
+Apache License 2.0, see [`LICENSE`](LICENSE). Copyright 2026 Yury Antonov.

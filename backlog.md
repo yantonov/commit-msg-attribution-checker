@@ -20,6 +20,7 @@
 - [x] Add a Motivation section to the README #hss5iy
 - [x] README: title the tool, fix the summary line, shorten Motivation #qobkz3
 - [x] README: move Motivation below the table of contents #lde4d
+- [x] Add Apache-2.0 license #kzrww2
 - [x] verify --json output #verify-json <- [cmd-verify]
 - [x] Hook integration and smoke test #hook-integration <- [cmd-verify]
 - [x] Dogfood the checker on this repo #dogfood <- [hook-integration]
