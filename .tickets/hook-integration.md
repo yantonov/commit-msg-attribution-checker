@@ -1,10 +1,11 @@
 ---
-status: open
+status: closed
 priority: 3
 deps: [cmd-verify]
 attachments: []
 created: 2026-11-10T06:39:08Z
-updated: 2026-11-10T06:40:23Z
+updated: 2026-11-10T07:58:28Z
+closed-at: 2026-11-10T07:58:28Z
 ---
 # Hook integration and smoke test
 

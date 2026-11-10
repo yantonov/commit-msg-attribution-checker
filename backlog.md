@@ -1,6 +1,5 @@
 ## Active
 - [ ] Decide whether aider.author-name should match a rendered ident #ehpbco
-- [ ] Hook integration and smoke test #hook-integration <- [cmd-verify]
 - [ ] Dogfood the checker on this repo #dogfood <- [hook-integration]
 
 ## Closed
@@ -18,3 +17,4 @@
 - [x] verify command: human output and exit codes #cmd-verify <- [config-resolution, match-engine]
 - [x] End-to-end acceptance suite #acceptance <- [cmd-config-create, cmd-verify]
 - [x] verify --json output #verify-json <- [cmd-verify]
+- [x] Hook integration and smoke test #hook-integration <- [cmd-verify]
