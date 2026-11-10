@@ -25,6 +25,8 @@ so the tracker stays in the repo and never drifts from the code.
 - Format: `cargo fmt --check`
 - Lint: `cargo clippy --all-targets -- -D warnings`
 - Build: `cargo build`
+- Install: `make install` — release build copied to `~/.local/bin`. Manual and
+  outside `check`, so verification never writes outside `target/`.
 - **Full verification: `make check`** — runs fmt, clippy and tests, then prints
   one verdict line.
 
