@@ -4,11 +4,11 @@ priority: 2
 deps: [cmd-config-create, cmd-verify]
 attachments: []
 created: 2026-11-10T06:40:47Z
-updated: 2026-11-10T06:40:47Z
+updated: 2026-11-10T06:41:12Z
 ---
 # End-to-end acceptance suite
 
-Prove the round-trip claims that no single unit ticket owns: creating a config changes nothing about behaviour, and replacing the defaults changes everything.
+Prove the round-trip claims that no single unit ticket owns: creating a config changes nothing about behaviour, and replacing the defaults changes everything. Contract: spec §3.3 and acceptance criteria 9 and 11.
 
 This ticket exists because the two remaining spec acceptance criteria need both `config create` and `verify` in the same test, and neither of those tickets should depend on the other.
 
@@ -21,5 +21,5 @@ Scope:
 
 Done when:
 - Criteria 9 and 11 both pass.
-- The test fails if replacement semantics ever become merge semantics, which is the behaviour the spec makes deliberate.
+- The test fails if replacement semantics ever become merge semantics, which is the behaviour spec §3.3 makes deliberate.
 - The test touches no real config path and no real home directory.

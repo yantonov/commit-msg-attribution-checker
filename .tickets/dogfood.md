@@ -4,11 +4,11 @@ priority: 3
 deps: [hook-integration]
 attachments: []
 created: 2026-11-10T06:39:10Z
-updated: 2026-11-10T06:40:33Z
+updated: 2026-11-10T06:41:10Z
 ---
 # Dogfood the checker on this repo
 
-Install the finished binary as this repository own `commit-msg` hook and confirm it accepts the project commit messages.
+Install the finished binary as this repository own `commit-msg` hook and confirm it accepts the project commit messages. Motivation: spec §2 states the hook is a weak gate, and this repo is the first place its false positives would show.
 
 Scope:
 - Install the hook locally only. Do not commit `.git/hooks/`.
