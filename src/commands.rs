@@ -6,10 +6,61 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use crate::defaults::{default_patterns, defaults_toml};
+use crate::identity::{self, Identity, Value};
 use crate::resolve::{self, Inputs};
 
 /// Prefix on every diagnostic, so a hook log names the tool (spec §6).
 const NAME: &str = "commit-msg-attribution-checker";
+
+/// `verify <msg-file>`: the identity half of the check.
+///
+/// This resolves who the commit is attributed to and reports the targets that
+/// were skipped, and stops there: the match output of spec §5.4 and the exit
+/// statuses 0 and 1 belong to `cmd-verify`. Until then the command exits 2, so
+/// no caller can mistake a half-built check for a clean message.
+///
+/// The identity error comes first, because it is an I/O error of spec §6 and
+/// the resolved value is what `author` and `committer` patterns test.
+pub fn verify(_msg_file: &Path, inputs: &identity::Inputs<'_>, verbose: bool) -> ExitCode {
+    let identity = match identity::resolve(inputs) {
+        Ok(identity) => identity,
+        Err(error) => {
+            eprintln!("{NAME}: verify: {error}");
+            return ExitCode::from(error.exit_code());
+        }
+    };
+
+    // spec §5.2: the skip is a note, not silence and not a failure.
+    if verbose {
+        for note in skip_notes(&identity) {
+            eprintln!("{note}");
+        }
+    }
+
+    eprintln!("{NAME}: verify: not implemented");
+    ExitCode::from(2)
+}
+
+/// The `-v` notes for each identity target that contributed no value.
+///
+/// Pure, so the criterion 12 decision — a skip prints a note and changes no
+/// outcome — is testable without a binary or a repository. stderr is where the
+/// caller writes them, like every other diagnostic (spec §6), so `verify`'s
+/// stdout stays the report and only the report.
+fn skip_notes(identity: &Identity) -> Vec<String> {
+    let mut notes = Vec::new();
+    for (target, value) in [
+        ("author", &identity.author),
+        ("committer", &identity.committer),
+    ] {
+        if *value == Value::OutsideRepository {
+            notes.push(format!(
+                "{NAME}: verify: skipping {target}: not inside a repository"
+            ));
+        }
+    }
+    notes
+}
 
 /// `config defaults`: write the built-in config as TOML to stdout.
 ///
@@ -310,6 +361,52 @@ mod tests {
         fn flush(&mut self) -> io::Result<()> {
             Err(io::Error::new(io::ErrorKind::BrokenPipe, "no reader"))
         }
+    }
+
+    /// One target resolved, the other skipped, which is the state a single
+    /// `--author` flag outside a repository produces.
+    fn half_skipped() -> identity::Identity {
+        identity::Identity {
+            author: identity::Value::Resolved("A (aider)".to_owned()),
+            committer: identity::Value::OutsideRepository,
+        }
+    }
+
+    #[test]
+    fn a_skipped_identity_target_is_reported_once_per_target() {
+        let skipped = identity::Identity {
+            author: identity::Value::OutsideRepository,
+            committer: identity::Value::OutsideRepository,
+        };
+
+        let notes = skip_notes(&skipped);
+
+        assert_eq!(notes.len(), 2, "{notes:?}");
+        assert!(notes[0].contains("skipping author"), "{notes:?}");
+        assert!(notes[1].contains("skipping committer"), "{notes:?}");
+        for note in &notes {
+            assert!(note.contains("not inside a repository"), "{note}");
+            assert!(note.starts_with(NAME), "a hook log names the tool: {note}");
+        }
+    }
+
+    #[test]
+    fn a_resolved_identity_target_is_not_reported() {
+        // spec §5.2: the note exists for the skip. A normal run inside a
+        // repository says nothing, so `-v` adds no noise to the common case.
+        let resolved = identity::Identity {
+            author: identity::Value::Resolved("A <a@example.com>".to_owned()),
+            committer: identity::Value::Resolved("A <a@example.com>".to_owned()),
+        };
+
+        assert!(skip_notes(&resolved).is_empty());
+        assert_eq!(
+            skip_notes(&half_skipped()),
+            [format!(
+                "{NAME}: verify: skipping committer: not inside a repository"
+            )],
+            "the note names the skipped target and the reason, and nothing else"
+        );
     }
 
     #[test]

@@ -9,13 +9,15 @@
 //!
 //! Regexes arrive compiled from [`Config`], and nothing here shells out: v1
 //! implements the trailer parser itself, so matching needs no repository and no
-//! git binary (spec §5.2).
+//! git binary (spec §5.2). An identity value is handed in already resolved, by
+//! [`crate::identity`], so this module still runs no git.
 
 // Reachable once `verify` lands; clippy runs with -D warnings, so the module
 // stays quiet until then.
 #![allow(dead_code)]
 
 use crate::config::{Config, Pattern, Target};
+use crate::identity::Identity;
 use crate::message::{Line, Message};
 
 /// One recorded match (spec §5.3).
@@ -29,25 +31,34 @@ use crate::message::{Line, Message};
 /// `trailer_key` is the key as the *config* spells it, because spec §5.4 prints
 /// `trailer co-authored-by` for a message line written `Co-authored-by:`. The
 /// target is `trailer` either way; the key is the extra word the block shows.
+///
+/// `line` is `None` for an identity match, because `author` and `committer` are
+/// commit metadata and occupy no line of the message (spec §5.2, §5.4). The
+/// block then prints the bare target, `(author)`, with no position, rather than
+/// a placeholder number.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Match {
     pub id: String,
     pub description: String,
     pub target: Target,
     /// The trailer value for a `trailer` pattern, the whole line for `line` and
-    /// `subject` (spec §5.2).
+    /// `subject`, and the rendered `Name <email>` for an identity pattern
+    /// (spec §5.2).
     pub value: String,
     /// 1-based and counted over the whole file, comment lines included
-    /// (spec §5.3).
-    pub line: usize,
-    /// `None` for a non-trailer pattern. Identity matches would carry no message
-    /// line at all, so the `identity-targets` ticket extends this record rather
-    /// than reusing `line: 0`.
+    /// (spec §5.3). `None` when the match has no message line.
+    pub line: Option<usize>,
+    /// `None` for a non-trailer pattern.
     pub trailer_key: Option<String>,
 }
 
 impl Match {
-    fn new(pattern: &Pattern, value: String, line: usize, trailer_key: Option<String>) -> Self {
+    fn new(
+        pattern: &Pattern,
+        value: String,
+        line: Option<usize>,
+        trailer_key: Option<String>,
+    ) -> Self {
         Self {
             id: pattern.id.clone(),
             description: pattern.description.clone(),
@@ -69,25 +80,30 @@ impl Match {
 /// The order is the order the engine evaluates, and it is stable, so the output
 /// block and the JSON are deterministic:
 ///
-/// 1. line by line, ascending line number, over the non-comment lines;
-/// 2. within one line, config order — the order the patterns appear in the
+/// 1. `author`, then `committer`, in config order within each — identity has no
+///    line to sort by, so it is reported before the message it describes;
+/// 2. line by line, ascending line number, over the non-comment lines;
+/// 3. within one line, config order — the order the patterns appear in the
 ///    file.
 ///
-/// Rule 2 needs no tie-break between the targets, because the trailer gate
+/// Rule 3 needs no tie-break between the targets, because the trailer gate
 /// means a line yields either trailer records or `line` and `subject` records,
 /// never both: a trailer match skips the whole rest of the line.
 ///
-/// Identity is not resolved here. `author` and `committer` patterns take their
-/// value from `git var`, which this module does not call (spec §5.2), so they
-/// contribute no records; the `identity-targets` ticket adds that input.
-pub fn run(config: &Config, message: &Message) -> Vec<Match> {
+/// Identity is not resolved here: `author` and `committer` take their value from
+/// `git var`, which this module does not call (spec §5.2). `identity` carries
+/// the already-resolved pair, and a target whose value is skipped contributes
+/// no record.
+pub fn run(config: &Config, message: &Message, identity: Option<&Identity>) -> Vec<Match> {
+    let mut recorded = vec![false; config.patterns.len()];
+    let mut matches = Vec::new();
+
+    identity_pass(config, identity, &mut recorded, &mut matches);
+
     let subject = message.subject().map(|line| line.number);
     // One slot per pattern, since spec §5.3 records a pattern at most once.
     // Indexed by position rather than keyed by `id`, so the engine never hashes
     // for it.
-    let mut recorded = vec![false; config.patterns.len()];
-    let mut matches = Vec::new();
-
     for line in message.lines_to_match() {
         let claimed = trailer_pass(config, line, &mut recorded, &mut matches);
 
@@ -102,19 +118,62 @@ pub fn run(config: &Config, message: &Message) -> Vec<Match> {
             let targeted = match pattern.target {
                 Target::Line => true,
                 Target::Subject => is_subject,
-                // `trailer` already ran in its own pass; identity targets read
-                // `git var` instead of message text (spec §5.2).
+                // `trailer` already ran in its own pass; the identity targets
+                // ran in `identity_pass` (spec §5.2).
                 Target::Trailer | Target::Author | Target::Committer => false,
             };
             if !targeted || recorded[index] || !pattern.regex.is_match(&line.text) {
                 continue;
             }
             recorded[index] = true;
-            matches.push(Match::new(pattern, line.text.clone(), line.number, None));
+            matches.push(Match::new(
+                pattern,
+                line.text.clone(),
+                Some(line.number),
+                None,
+            ));
         }
     }
 
     matches
+}
+
+/// Run every `author` and `committer` pattern against its resolved value.
+///
+/// The value is the rendered `Name <email>` for the whole target, so one value
+/// can match at most one line of a report, and a pattern is tested once
+/// (spec §5.2, §5.3). A skipped target tests nothing.
+fn identity_pass(
+    config: &Config,
+    identity: Option<&Identity>,
+    recorded: &mut [bool],
+    matches: &mut Vec<Match>,
+) {
+    let Some(identity) = identity else {
+        return;
+    };
+
+    // Author before committer, so two matches of the same name still report in
+    // a fixed order (spec §5.3).
+    for (target, value) in [
+        (Target::Author, &identity.author),
+        (Target::Committer, &identity.committer),
+    ] {
+        // spec §5.2: outside a repository the target is skipped, so it neither
+        // matches nor reports.
+        let Some(text) = value.resolved() else {
+            continue;
+        };
+
+        for (index, pattern) in config.patterns.iter().enumerate() {
+            if pattern.target != target || recorded[index] || !pattern.regex.is_match(text) {
+                continue;
+            }
+            recorded[index] = true;
+            // No line number: the identity is commit metadata, not message text.
+            matches.push(Match::new(pattern, text.to_owned(), None, None));
+        }
+    }
 }
 
 /// The trailer pass of spec §5.2 for one line: run every trailer pattern and
@@ -158,7 +217,7 @@ fn trailer_pass(
         matches.push(Match::new(
             pattern,
             trailer.value.clone(),
-            line.number,
+            Some(line.number),
             Some(key.to_owned()),
         ));
     }
@@ -170,6 +229,7 @@ fn trailer_pass(
 mod tests {
     use super::*;
     use crate::defaults::default_patterns;
+    use crate::identity::Value;
     use std::path::Path;
 
     fn message(text: &str) -> Message {
@@ -184,15 +244,28 @@ mod tests {
     /// Run against the shipped registry, so a test asserts the patterns users
     /// actually get (spec §4).
     fn run_defaults(text: &str) -> Vec<Match> {
-        run(&default_patterns(), &message(text))
+        run(&default_patterns(), &message(text), None)
+    }
+
+    /// The resolved pair git would hand `verify`: both targets carry a value.
+    fn identity(author: &str, committer: &str) -> Identity {
+        Identity {
+            author: Value::Resolved(author.to_owned()),
+            committer: Value::Resolved(committer.to_owned()),
+        }
     }
 
     fn ids(matches: &[Match]) -> Vec<&str> {
         matches.iter().map(|found| found.id.as_str()).collect()
     }
 
+    /// Line numbers, for the tests about message text. A match without a line
+    /// would mean the identity pass leaked into these, so it fails here.
     fn numbers(matches: &[Match]) -> Vec<usize> {
-        matches.iter().map(|found| found.line).collect()
+        matches
+            .iter()
+            .map(|found| found.line.expect("a message match carries a line number"))
+            .collect()
     }
 
     fn pattern<'a>(config: &'a Config, id: &str) -> &'a Pattern {
@@ -212,7 +285,7 @@ mod tests {
         assert_eq!(matched.description, "Co-authored-by trailer naming Claude");
         assert_eq!(matched.target, Target::Trailer);
         assert_eq!(matched.value, "Claude <noreply@anthropic.com>");
-        assert_eq!(matched.line, 3);
+        assert_eq!(matched.line, Some(3));
         assert_eq!(
             matched.trailer_key.as_deref(),
             Some("co-authored-by"),
@@ -276,7 +349,7 @@ mod tests {
             matched.value, "Made with Cursor",
             "a line pattern's value is the whole line"
         );
-        assert_eq!(matched.line, 3);
+        assert_eq!(matched.line, Some(3));
         assert_eq!(matched.trailer_key, None);
     }
 
@@ -285,7 +358,7 @@ mod tests {
         let found = run_defaults("Subject\n\n🤖 Generated with something unknown\n");
 
         assert_eq!(ids(&found), ["free-form-footer.emoji"], "{found:#?}");
-        assert_eq!(found[0].line, 3);
+        assert_eq!(found[0].line, Some(3));
     }
 
     #[test]
@@ -309,10 +382,10 @@ mod tests {
             "the footer pattern would match this line, so the gate is what stops it"
         );
 
-        let found = run(&config, &message("Subject\n\nGenerated-by: Cursor\n"));
+        let found = run(&config, &message("Subject\n\nGenerated-by: Cursor\n"), None);
 
         assert_eq!(ids(&found), ["generated-by"], "{found:#?}");
-        assert_eq!(found[0].line, 3);
+        assert_eq!(found[0].line, Some(3));
     }
 
     #[test]
@@ -327,7 +400,7 @@ mod tests {
             "the footer pattern would match this line"
         );
 
-        let found = run(&config, &message("Subject\n\nMade-with: Cursor\n"));
+        let found = run(&config, &message("Subject\n\nMade-with: Cursor\n"), None);
 
         assert_eq!(ids(&found), ["made-with"], "{found:#?}");
     }
@@ -339,7 +412,7 @@ mod tests {
         assert_eq!(ids(&found), ["aider.subject"], "{found:#?}");
         let matched = &found[0];
         assert_eq!(matched.target, Target::Subject);
-        assert_eq!(matched.line, 1);
+        assert_eq!(matched.line, Some(1));
         assert_eq!(matched.value, "aider: fix validation");
         assert_eq!(matched.trailer_key, None);
     }
@@ -354,7 +427,7 @@ mod tests {
              [[pattern]]\nid = \"aider.subject\"\ndescription = \"d\"\n\
              target = \"subject\"\nregex = '(?i)^aider\\s*:'\n",
         );
-        let found = run(&config, &message("aider: fix validation\n"));
+        let found = run(&config, &message("aider: fix validation\n"), None);
 
         assert_eq!(ids(&found), ["aider.subject"], "{found:#?}");
     }
@@ -369,7 +442,11 @@ mod tests {
              [[pattern]]\nid = \"subject.any\"\ndescription = \"d\"\n\
              target = \"subject\"\nregex = '\\S'\n",
         );
-        let found = run(&config, &message("Assisted-by: Amp <amp@ampcode.com>\n"));
+        let found = run(
+            &config,
+            &message("Assisted-by: Amp <amp@ampcode.com>\n"),
+            None,
+        );
 
         assert_eq!(ids(&found), ["assisted-by"], "{found:#?}");
     }
@@ -384,7 +461,11 @@ mod tests {
         );
 
         assert_eq!(ids(&found), ["co-authored-by.claude"], "{found:#?}");
-        assert_eq!(found[0].line, 3, "spec §5.3: the first match is recorded");
+        assert_eq!(
+            found[0].line,
+            Some(3),
+            "spec §5.3: the first match is recorded"
+        );
     }
 
     #[test]
@@ -392,7 +473,7 @@ mod tests {
         let found = run_defaults("Subject\n\nGenerated with Cursor\n\nGenerated with Cursor\n");
 
         assert_eq!(ids(&found), ["free-form-footer.tool"], "{found:#?}");
-        assert_eq!(found[0].line, 3);
+        assert_eq!(found[0].line, Some(3));
     }
 
     #[test]
@@ -401,7 +482,8 @@ mod tests {
 
         assert_eq!(ids(&found), ["generated-by"], "{found:#?}");
         assert_eq!(
-            found[0].line, 3,
+            found[0].line,
+            Some(3),
             "only the first line is recorded, and the second is still gated"
         );
     }
@@ -470,7 +552,7 @@ mod tests {
              [[pattern]]\nid = \"line.second\"\ndescription = \"d\"\n\
              target = \"line\"\nregex = '(?i)^aider'\n",
         );
-        let found = run(&config, &message("aider: fix validation\n"));
+        let found = run(&config, &message("aider: fix validation\n"), None);
 
         assert_eq!(
             ids(&found),
@@ -480,10 +562,10 @@ mod tests {
     }
 
     #[test]
-    fn identity_targets_are_deferred_and_never_read_message_text() {
+    fn identity_targets_never_read_message_text() {
         // Both lines would match an identity pattern if the engine tested those
         // against message text. Their value is `git var` output (spec §5.2), so
-        // the engine reports nothing and `identity-targets` adds the records.
+        // with no resolved identity the engine reports nothing.
         for text in [
             "Fix the parser (aider)\n",
             "Fix the parser <dev@cursor.com>\n",
@@ -491,6 +573,148 @@ mod tests {
             let found = run_defaults(text);
             assert!(found.is_empty(), "{text:?}: {found:#?}");
         }
+    }
+
+    /// The default registry plus a resolved identity, which is what `verify`
+    /// passes once git has answered.
+    fn run_identity(text: &str, author: &str, committer: &str) -> Vec<Match> {
+        run(
+            &default_patterns(),
+            &message(text),
+            Some(&identity(author, committer)),
+        )
+    }
+
+    #[test]
+    fn an_aider_suffix_in_the_author_name_matches() {
+        // spec §4.5 anchors `aider.author-name` with `$`, and spec §5.2 says a
+        // flag value is used as given, so the flag is the input that carries an
+        // `(aider)` suffix at the end of the value.
+        let found = run_identity(
+            "Fix the parser\n",
+            "Aider (aider)",
+            "Ada Lovelace <ada@example.com>",
+        );
+
+        assert_eq!(ids(&found), ["aider.author-name"], "{found:#?}");
+        let matched = &found[0];
+        assert_eq!(matched.target, Target::Author);
+        assert_eq!(matched.value, "Aider (aider)");
+        assert_eq!(matched.trailer_key, None);
+    }
+
+    #[test]
+    fn the_aider_name_pattern_does_not_match_a_rendered_ident() {
+        // A gap to decide on, not a behaviour to rely on: spec §4.5 anchors
+        // `aider.author-name` at the end of the value, and spec §5.2 renders an
+        // ident as `Name <email>`, so a real aider author read through `git var`
+        // ends its value with the email and the anchored pattern misses it.
+        // Changing the default is a spec and registry change, so this test pins
+        // what the shipped registry does today.
+        let found = run_identity(
+            "Fix the parser\n",
+            "Aider (aider) <aider@example.com>",
+            "Ada Lovelace <ada@example.com>",
+        );
+
+        assert!(found.is_empty(), "{found:#?}");
+    }
+
+    #[test]
+    fn an_agent_email_in_the_committer_matches() {
+        let found = run_identity(
+            "Fix the parser\n",
+            "Ada Lovelace <ada@example.com>",
+            "Cursor <dev@cursor.com>",
+        );
+
+        assert_eq!(ids(&found), ["committer.agent-identity"], "{found:#?}");
+        assert_eq!(found[0].target, Target::Committer);
+        assert_eq!(found[0].value, "Cursor <dev@cursor.com>");
+    }
+
+    #[test]
+    fn an_identity_match_has_no_message_line() {
+        // spec §5.3 numbers a match by message line; an identity is commit
+        // metadata and occupies none, so the renderer gets `None` rather than a
+        // misleading 0 or 1.
+        let found = run_identity(
+            "Fix the parser\n\nBody\n",
+            "Aider (aider)",
+            "Ada Lovelace <ada@example.com>",
+        );
+
+        assert_eq!(found.len(), 1, "{found:#?}");
+        assert_eq!(found[0].line, None);
+    }
+
+    #[test]
+    fn a_human_identity_matches_nothing() {
+        let found = run_identity(
+            "Fix the parser\n",
+            "Ada Lovelace <ada@example.com>",
+            "Ada Lovelace <ada@example.com>",
+        );
+
+        assert!(found.is_empty(), "{found:#?}");
+    }
+
+    #[test]
+    fn a_skipped_identity_target_contributes_no_record() {
+        // spec §5.2 and §8 criterion 12: outside a repository there is no
+        // identity to test, so the message result stands alone.
+        let skipped = Identity {
+            author: Value::OutsideRepository,
+            committer: Value::OutsideRepository,
+        };
+        let found = run(
+            &default_patterns(),
+            &message("Fix the parser\n"),
+            Some(&skipped),
+        );
+
+        assert!(found.is_empty(), "{found:#?}");
+    }
+
+    #[test]
+    fn a_resolved_identity_is_reported_before_the_message_matches() {
+        // The config order alone cannot order an identity against a line, and
+        // an identity has no line number to sort by, so the order is fixed:
+        // author, committer, then the message top to bottom (spec §5.3).
+        let found = run_identity(
+            "aider: fix validation\n\nCo-authored-by: Claude <noreply@anthropic.com>\n",
+            "Aider (aider)",
+            "Cursor <dev@cursor.com>",
+        );
+
+        assert_eq!(
+            ids(&found),
+            [
+                "aider.author-name",
+                "committer.agent-identity",
+                "aider.subject",
+                "co-authored-by.claude",
+            ],
+            "{found:#?}"
+        );
+        assert_eq!(
+            numbers(&found[2..]),
+            [1, 3],
+            "the identity records carry no line, so they cannot be in `numbers`"
+        );
+    }
+
+    #[test]
+    fn an_identity_pattern_records_at_most_one_match() {
+        // spec §5.3: a pattern is recorded once. The author value is a single
+        // string, so the engine tests it once and cannot report twice.
+        let found = run_identity(
+            "Fix the parser\n",
+            "Aider (aider)",
+            "Ada Lovelace <ada@example.com>",
+        );
+
+        assert_eq!(ids(&found), ["aider.author-name"], "{found:#?}");
     }
 
     #[test]
@@ -504,8 +728,8 @@ mod tests {
              🤖 Generated with Amp\n",
         );
 
-        let first = run(&config, &parsed);
-        let second = run(&config, &parsed);
+        let first = run(&config, &parsed, None);
+        let second = run(&config, &parsed, None);
 
         assert_eq!(first, second, "the order must not depend on the run");
         assert_eq!(
@@ -527,6 +751,7 @@ mod tests {
         let found = run(
             &config("version = 1\n"),
             &message("Co-authored-by: Claude <noreply@anthropic.com>\n"),
+            None,
         );
 
         assert!(found.is_empty());

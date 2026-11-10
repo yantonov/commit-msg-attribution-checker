@@ -2,6 +2,7 @@ mod commands;
 mod config;
 mod defaults;
 mod engine;
+mod identity;
 mod message;
 mod resolve;
 
@@ -27,6 +28,18 @@ enum Commands {
     Verify {
         /// Message file to check
         msg_file: PathBuf,
+
+        /// Identity to test `author` patterns against instead of `git var`
+        #[arg(long, value_name = "IDENT")]
+        author: Option<String>,
+
+        /// Identity to test `committer` patterns against instead of `git var`
+        #[arg(long, value_name = "IDENT")]
+        committer: Option<String>,
+
+        /// Report the identity targets that were skipped
+        #[arg(short, long)]
+        verbose: bool,
     },
 
     /// Inspect or write the configuration
@@ -61,7 +74,18 @@ fn main() -> ExitCode {
     };
 
     match cli.command {
-        Commands::Verify { .. } => not_implemented("verify"),
+        Commands::Verify {
+            msg_file,
+            author,
+            committer,
+            verbose,
+        } => commands::verify(
+            &msg_file,
+            // The program and the directory git runs in are inputs the command
+            // never reads itself, which is what makes them testable.
+            &identity::Inputs::new(author.as_deref(), committer.as_deref()),
+            verbose,
+        ),
         Commands::Config {
             action: ConfigAction::Defaults,
         } => commands::config_defaults(),
@@ -72,9 +96,4 @@ fn main() -> ExitCode {
             action: ConfigAction::Show,
         } => commands::config_show(cli.config),
     }
-}
-
-fn not_implemented(command: &str) -> ExitCode {
-    eprintln!("commit-msg-attribution-checker: {command}: not implemented");
-    ExitCode::from(2)
 }

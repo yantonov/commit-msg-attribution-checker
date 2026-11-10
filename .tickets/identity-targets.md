@@ -1,10 +1,10 @@
 ---
-status: open
+status: in_progress
 priority: 2
 deps: [match-engine]
 attachments: []
 created: 2026-11-10T06:39:04Z
-updated: 2026-11-10T06:40:19Z
+updated: 2026-11-10T07:32:44Z
 ---
 # Identity targets via git var
 
@@ -21,3 +21,8 @@ Done when:
 - Tests cover: `git var` value used when inside a repo with a real committer, flag override wins over both, `(aider)` suffix in the author name matches, agent email in the committer matches.
 - A test covers the committer-defaults-to-author case and asserts the rendered committer equals the author, which the env-var approach would also get wrong in a different way.
 - A test asserts a missing `git` binary exits 2 rather than skipping.
+
+Remaining (deferred to cmd-verify):
+- Done-when bullet 1 is not closed here: criterion 12 needs `verify` to exit on the message result, and `verify` still exits 2 as not implemented. `cmd-verify` asserts it end to end once the output path exists.
+- Resolution, rendering, the skip decision, the flag overrides, the missing-binary error and the committer-falls-back-to-author case are all implemented and unit-tested here.
+- Noticed, not fixed (registry change, needs agreement): `aider.author-name` is anchored with `\(aider\)\s*$`, but spec §5.2 renders an identity as `Name <email>`, so the anchored pattern cannot match a real aider author read through `git var`. Pinned by tests/identity_targets.rs::the_aider_name_pattern_does_not_match_a_rendered_ident.
