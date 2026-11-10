@@ -1,5 +1,4 @@
 ## Active
-- [ ] Minimal harness: AGENTS.md and Makefile #minimal-harness <- [app-placeholder]
 - [ ] Config model and schema validation #config-model <- [app-placeholder]
 - [ ] Config resolution order #config-resolution <- [app-placeholder]
 - [ ] Default pattern registry #default-patterns <- [config-model]
@@ -17,3 +16,4 @@
 
 ## Closed
 - [x] App placeholder: cargo scaffold #app-placeholder
+- [x] Minimal harness: AGENTS.md and Makefile #minimal-harness <- [app-placeholder]

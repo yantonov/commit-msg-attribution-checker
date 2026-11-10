@@ -1,10 +1,11 @@
 ---
-status: open
+status: closed
 priority: 1
 deps: [app-placeholder]
 attachments: []
 created: 2026-11-10T06:38:48Z
-updated: 2026-11-10T06:40:26Z
+updated: 2026-11-10T06:49:27Z
+closed-at: 2026-11-10T06:49:27Z
 ---
 # Minimal harness: AGENTS.md and Makefile
 
