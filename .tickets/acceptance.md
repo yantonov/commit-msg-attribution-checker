@@ -1,10 +1,11 @@
 ---
-status: open
+status: closed
 priority: 2
 deps: [cmd-config-create, cmd-verify]
 attachments: []
 created: 2026-11-10T06:40:47Z
-updated: 2026-11-10T06:41:12Z
+updated: 2026-11-10T07:51:01Z
+closed-at: 2026-11-10T07:51:01Z
 ---
 # End-to-end acceptance suite
 

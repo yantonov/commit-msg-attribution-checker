@@ -1,5 +1,4 @@
 ## Active
-- [ ] End-to-end acceptance suite #acceptance <- [cmd-config-create, cmd-verify]
 - [ ] Decide whether aider.author-name should match a rendered ident #ehpbco
 - [ ] verify --json output #verify-json <- [cmd-verify]
 - [ ] Hook integration and smoke test #hook-integration <- [cmd-verify]
@@ -18,3 +17,4 @@
 - [x] config show #cmd-config-show <- [config-resolution]
 - [x] Identity targets via git var #identity-targets <- [match-engine]
 - [x] verify command: human output and exit codes #cmd-verify <- [config-resolution, match-engine]
+- [x] End-to-end acceptance suite #acceptance <- [cmd-config-create, cmd-verify]
