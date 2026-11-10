@@ -14,11 +14,15 @@
 //! targets resolve from the scratch `GIT_CONFIG_GLOBAL`, which is why the
 //! repository needs no `-c` flags on the commits it makes.
 
+mod support;
+
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU32, Ordering};
+
+use support::{hook_script, shell_command};
 
 const BIN: &str = env!("CARGO_BIN_EXE_commit-msg-attribution-checker");
 
@@ -41,39 +45,6 @@ const CLEAN: &str = "Add the parser\n\nBody\n";
 
 /// The pattern a blocked commit's report has to name (spec §4.1).
 const CLAUDE_PATTERN: &str = "co-authored-by.claude";
-
-/// The one hook script, with the command substituted.
-///
-/// spec §7's text is the template, so the documented snippet and the installed
-/// one cannot differ in anything but the command word.
-/// `the_readme_documents_the_installed_snippet` asserts
-/// `hook_script(SPEC_COMMAND) == SPEC_SNIPPET`, which pins the template to the
-/// spec text rather than to a second copy of it.
-fn hook_script(command: &str) -> String {
-    format!("#!/bin/sh\nexec {command} verify \"$1\"\n")
-}
-
-/// The binary path as a POSIX shell sees it inside the hook.
-///
-/// The path from `CARGO_BIN_EXE_*` holds backslashes on Windows and may hold
-/// spaces. A `sh` script reads a backslash as an escape and an unquoted space as
-/// a word break, so the separators become `/` (git's own `sh` accepts them on
-/// Windows) and the result is double-quoted, with the characters that stay
-/// special inside double quotes escaped. Replacing `\` first means the escaping
-/// loop never sees one.
-fn shell_command(path: &Path) -> String {
-    let text = path.display().to_string().replace('\\', "/");
-    let mut quoted = String::with_capacity(text.len() + 2);
-    quoted.push('"');
-    for ch in text.chars() {
-        if matches!(ch, '"' | '`' | '$') {
-            quoted.push('\\');
-        }
-        quoted.push(ch);
-    }
-    quoted.push('"');
-    quoted
-}
 
 /// A scratch directory under the system temp dir: no extra crate, and no test
 /// touches the real user profile.

@@ -80,7 +80,12 @@ NOT done: "code is written", "looks right", "the unit tests pass".
   exit codes (§6), default patterns (§4), crate set (§10).
 - `doc/llm_commit_attribution_filtering.md`: the research the default patterns
   come from. Read before changing or adding one.
-- `README.md`: one line of summary. The hook install snippet is not written
-  yet; it belongs to the `hook-integration` ticket, not to this file.
+- `README.md`: one line of summary, plus spec §7's hook snippet, which
+  `.git/hooks/commit-msg` must carry verbatim.
+- This checkout installs the hook in `.git/hooks/commit-msg`, running this
+  build's binary, so here a commit that records attribution is blocked, and a
+  deleted `target/` blocks every commit until you rebuild. `.git/hooks/` is
+  untracked, so a clone has none. Bypass one commit with
+  `git commit --no-verify` (spec §2).
 - `docs/`: does not exist yet. Create it only when a section here outgrows the
   150-line budget, then leave a pointer to it.

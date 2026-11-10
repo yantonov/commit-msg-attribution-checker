@@ -1,10 +1,11 @@
 ---
-status: open
+status: closed
 priority: 3
 deps: [hook-integration]
 attachments: []
 created: 2026-11-10T06:39:10Z
-updated: 2026-11-10T06:41:10Z
+updated: 2026-11-10T08:11:08Z
+closed-at: 2026-11-10T08:11:08Z
 ---
 # Dogfood the checker on this repo
 
