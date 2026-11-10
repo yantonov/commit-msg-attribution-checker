@@ -11,6 +11,7 @@
 - [ ] config show #cmd-config-show <- [config-resolution]
 - [ ] Identity targets via git var #identity-targets <- [match-engine]
 - [ ] verify command: human output and exit codes #cmd-verify <- [config-resolution, match-engine]
+- [ ] End-to-end acceptance suite #acceptance <- [cmd-config-create, cmd-verify]
 - [ ] verify --json output #verify-json <- [cmd-verify]
 - [ ] Hook integration and smoke test #hook-integration <- [cmd-verify]
 - [ ] Dogfood the checker on this repo #dogfood <- [hook-integration]
