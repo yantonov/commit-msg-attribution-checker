@@ -17,6 +17,7 @@
 - [x] Decide whether aider.author-name should match a rendered ident #ehpbco
 - [x] Make install target: release artifact then install to ~/.local/bin #gizbn3
 - [x] Document installing the hook through krok #tvn67
+- [x] Add a Motivation section to the README #hss5iy
 - [x] verify --json output #verify-json <- [cmd-verify]
 - [x] Hook integration and smoke test #hook-integration <- [cmd-verify]
 - [x] Dogfood the checker on this repo #dogfood <- [hook-integration]
