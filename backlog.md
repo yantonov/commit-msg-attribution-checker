@@ -1,5 +1,4 @@
 ## Active
-- [ ] Config model and schema validation #config-model <- [app-placeholder]
 - [ ] Config resolution order #config-resolution <- [app-placeholder]
 - [ ] Default pattern registry #default-patterns <- [config-model]
 - [ ] Message parsing: comment lines and trailers #msg-parsing <- [app-placeholder]
@@ -17,3 +16,4 @@
 ## Closed
 - [x] App placeholder: cargo scaffold #app-placeholder
 - [x] Minimal harness: AGENTS.md and Makefile #minimal-harness <- [app-placeholder]
+- [x] Config model and schema validation #config-model <- [app-placeholder]
