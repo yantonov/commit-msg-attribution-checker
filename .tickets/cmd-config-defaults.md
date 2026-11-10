@@ -1,10 +1,11 @@
 ---
-status: open
+status: closed
 priority: 2
 deps: [default-patterns]
 attachments: []
 created: 2026-11-10T06:38:55Z
-updated: 2026-11-10T06:40:32Z
+updated: 2026-11-10T07:08:12Z
+closed-at: 2026-11-10T07:08:12Z
 ---
 # config defaults
 

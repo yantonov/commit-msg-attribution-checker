@@ -1,3 +1,4 @@
+mod commands;
 mod config;
 mod defaults;
 mod engine;
@@ -63,7 +64,7 @@ fn main() -> ExitCode {
         Commands::Verify { .. } => not_implemented("verify"),
         Commands::Config {
             action: ConfigAction::Defaults,
-        } => not_implemented("config defaults"),
+        } => commands::config_defaults(),
         Commands::Config {
             action: ConfigAction::Create,
         } => not_implemented("config create"),

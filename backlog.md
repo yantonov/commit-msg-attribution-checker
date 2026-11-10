@@ -1,5 +1,4 @@
 ## Active
-- [ ] config defaults #cmd-config-defaults <- [default-patterns]
 - [ ] config create #cmd-config-create <- [cmd-config-defaults]
 - [ ] config show #cmd-config-show <- [config-resolution]
 - [ ] Identity targets via git var #identity-targets <- [match-engine]
@@ -17,3 +16,4 @@
 - [x] Default pattern registry #default-patterns <- [config-model]
 - [x] Message parsing: comment lines and trailers #msg-parsing <- [app-placeholder]
 - [x] Match engine with trailer gate #match-engine <- [config-model, msg-parsing]
+- [x] config defaults #cmd-config-defaults <- [default-patterns]
