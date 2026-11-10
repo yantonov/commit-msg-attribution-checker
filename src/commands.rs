@@ -6,22 +6,51 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use crate::defaults::{default_patterns, defaults_toml};
+use crate::engine;
 use crate::identity::{self, Identity, Value};
+use crate::message::Message;
+use crate::report;
 use crate::resolve::{self, Inputs};
 
 /// Prefix on every diagnostic, so a hook log names the tool (spec §6).
 const NAME: &str = "commit-msg-attribution-checker";
 
-/// `verify <msg-file>`: the identity half of the check.
+/// `verify <msg-file>`: check one message file (spec §5.4, §6).
 ///
-/// This resolves who the commit is attributed to and reports the targets that
-/// were skipped, and stops there: the match output of spec §5.4 and the exit
-/// statuses 0 and 1 belong to `cmd-verify`. Until then the command exits 2, so
-/// no caller can mistake a half-built check for a clean message.
+/// Exit status is 0 for a clean message, 1 for a match and 2 for an error;
+/// nothing else leaves this function.
 ///
-/// The identity error comes first, because it is an I/O error of spec §6 and
-/// the resolved value is what `author` and `committer` patterns test.
-pub fn verify(_msg_file: &Path, inputs: &identity::Inputs<'_>, verbose: bool) -> ExitCode {
+/// The three inputs are read in the order the user can fix them: the message
+/// file, then the config, then the identity. A bad message path is the most
+/// common user error and a file read is cheap, so checking it before the config
+/// means a mistyped path is reported as a mistyped path even when the config is
+/// also broken. The message is then read exactly once: [`Message`] owns the
+/// parsed file and the identity resolution touches no file, so no second read
+/// can disagree with the first.
+pub fn verify(
+    msg_file: &Path,
+    config_flag: Option<PathBuf>,
+    inputs: &identity::Inputs<'_>,
+    verbose: bool,
+) -> ExitCode {
+    // spec §6: an unreadable message is an I/O error, and the message names the
+    // path because that is what the user has to correct.
+    let message = match Message::read(msg_file) {
+        Ok(message) => message,
+        Err(error) => {
+            eprintln!("{NAME}: verify: {error}");
+            return ExitCode::from(error.exit_code());
+        }
+    };
+
+    let resolved = match resolve::resolve(&Inputs::from_env(config_flag), default_patterns) {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            eprintln!("{NAME}: verify: {error}");
+            return ExitCode::from(error.exit_code());
+        }
+    };
+
     let identity = match identity::resolve(inputs) {
         Ok(identity) => identity,
         Err(error) => {
@@ -30,15 +59,36 @@ pub fn verify(_msg_file: &Path, inputs: &identity::Inputs<'_>, verbose: bool) ->
         }
     };
 
-    // spec §5.2: the skip is a note, not silence and not a failure.
+    // spec §5.2: the skip is a note, not silence and not a failure. stderr is
+    // where every diagnostic goes, so `-v` leaves stdout byte-identical.
     if verbose {
         for note in skip_notes(&identity) {
             eprintln!("{note}");
         }
     }
 
-    eprintln!("{NAME}: verify: not implemented");
-    ExitCode::from(2)
+    // spec §5.4: a clean message writes nothing at all, which is what the
+    // renderer's `None` says.
+    let Some(block) = report::render(&engine::run(&resolved.config, &message, Some(&identity)))
+    else {
+        return ExitCode::SUCCESS;
+    };
+
+    let mut stdout = io::stdout().lock();
+    match stdout
+        .write_all(block.as_bytes())
+        .and_then(|()| stdout.flush())
+    {
+        // spec §6: attribution found is status 1, and the block has been shown.
+        Ok(()) => ExitCode::from(1),
+        Err(err) => {
+            // The report did not reach the caller, so it must not be read as a
+            // rejection the caller can act on: the write failure is an I/O
+            // error of spec §6, and the hook keeps stderr instead of a block.
+            eprintln!("{NAME}: verify: writing to stdout: {err}");
+            ExitCode::from(2)
+        }
+    }
 }
 
 /// The `-v` notes for each identity target that contributed no value.

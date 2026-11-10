@@ -8,10 +8,6 @@
 //! Identity targets are not here either: their value comes from `git var`, not
 //! from the message file (§5.2).
 
-// Reachable once `verify` lands; clippy runs with -D warnings, so the module
-// stays quiet until then.
-#![allow(dead_code)]
-
 use std::fmt;
 use std::fs;
 use std::io;

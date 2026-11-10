@@ -11,10 +11,6 @@
 //! skip", "a failed `git var` inside one is an error" and "the flag is used as
 //! given" are unit tests. [`resolve`] is the thin wrapper that runs git.
 
-// Reachable once `verify` lands; clippy runs with -D warnings, so the module
-// stays quiet until then.
-#![allow(dead_code)]
-
 use std::fmt;
 use std::io;
 use std::path::PathBuf;

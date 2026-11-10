@@ -2,8 +2,9 @@
 //! criterion 12): the `--author`, `--committer` and `-v` flags are accepted,
 //! the skip note reaches stderr, and a missing `git` binary is exit 2.
 //!
-//! The match output and the 0/1 exit statuses belong to `cmd-verify`, so every
-//! test here asserts the identity resolution and nothing about the report.
+//! Each test here asserts the identity half only, with a config that carries no
+//! pattern, so the report cannot decide the outcome. The report's own exit
+//! statuses are asserted in `tests/verify.rs`.
 //! Each child gets `--config` and a scratch `XDG_CONFIG_HOME`/`HOME`, so no run
 //! reaches the machine's own config path.
 
@@ -124,19 +125,18 @@ fn the_identity_flags_are_accepted() {
         !stderr.contains("unexpected argument") && !stderr.contains("invalid"),
         "every declared flag parses: {stderr}"
     );
-    assert!(
-        stderr.contains("not implemented"),
-        "the command still declines, so no caller reads a half-built check as clean: {stderr}"
-    );
-    assert_eq!(output.status.code(), Some(2));
+    // Both flags answer for every target, so `-v` has nothing to report and the
+    // config has no pattern: this is the clean path.
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert!(!stderr.contains("skipping"), "{stderr}");
     assert!(output.stdout.is_empty(), "stdout stays the report's alone");
 }
 
 #[test]
 fn outside_a_repository_the_skip_is_reported_at_v() {
     // spec §5.2 and §8 criterion 12: the identity targets are skipped, and `-v`
-    // names them. The exit status here is the not-implemented status, so only
-    // the note is asserted; `cmd-verify` owns the exit-status half.
+    // names them. The config carries no pattern, so the skip changes no outcome
+    // and the run is clean.
     require_git();
     let scratch = Scratch::new("skip");
     let message = scratch.message();
@@ -148,9 +148,11 @@ fn outside_a_repository_the_skip_is_reported_at_v() {
     );
 
     let stderr = stderr(&output);
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
     assert!(stderr.contains("skipping author"), "{stderr}");
     assert!(stderr.contains("skipping committer"), "{stderr}");
     assert!(stderr.contains("not inside a repository"), "{stderr}");
+    assert!(output.stdout.is_empty(), "stdout stays the report's alone");
 }
 
 #[test]
@@ -203,8 +205,11 @@ fn inside_a_repository_with_a_committer_nothing_is_skipped() {
     );
 
     let stderr = stderr(&output);
-    assert!(!stderr.contains("skipping"), "{stderr}");
-    assert!(stderr.contains("not implemented"), "{stderr}");
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert!(
+        stderr.is_empty(),
+        "a resolved identity and a clean message say nothing: {stderr}"
+    );
 }
 
 #[test]
@@ -230,9 +235,10 @@ fn a_missing_git_binary_is_exit_2_and_not_a_skip() {
         !stderr.contains("skipping"),
         "a missing binary is an error, never a skip: {stderr}"
     );
-    assert!(
-        !stderr.contains("not implemented"),
-        "the identity error is reported before the command declines: {stderr}"
+    assert_eq!(
+        stderr.lines().count(),
+        1,
+        "one error, and it is the identity's: {stderr}"
     );
     assert!(stderr.contains("git"), "the message names git: {stderr}");
 }

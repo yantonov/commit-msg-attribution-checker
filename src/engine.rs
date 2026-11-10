@@ -12,10 +12,6 @@
 //! git binary (spec §5.2). An identity value is handed in already resolved, by
 //! [`crate::identity`], so this module still runs no git.
 
-// Reachable once `verify` lands; clippy runs with -D warnings, so the module
-// stays quiet until then.
-#![allow(dead_code)]
-
 use crate::config::{Config, Pattern, Target};
 use crate::identity::Identity;
 use crate::message::{Line, Message};

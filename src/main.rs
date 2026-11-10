@@ -4,6 +4,7 @@ mod defaults;
 mod engine;
 mod identity;
 mod message;
+mod report;
 mod resolve;
 
 use std::path::PathBuf;
@@ -81,6 +82,7 @@ fn main() -> ExitCode {
             verbose,
         } => commands::verify(
             &msg_file,
+            cli.config,
             // The program and the directory git runs in are inputs the command
             // never reads itself, which is what makes them testable.
             &identity::Inputs::new(author.as_deref(), committer.as_deref()),

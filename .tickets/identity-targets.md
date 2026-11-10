@@ -1,10 +1,11 @@
 ---
-status: in_progress
+status: closed
 priority: 2
 deps: [match-engine]
 attachments: []
 created: 2026-11-10T06:39:04Z
-updated: 2026-11-10T07:32:44Z
+updated: 2026-11-10T07:38:13Z
+closed-at: 2026-11-10T07:38:13Z
 ---
 # Identity targets via git var
 

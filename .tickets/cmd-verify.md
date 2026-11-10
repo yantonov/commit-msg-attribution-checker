@@ -1,10 +1,10 @@
 ---
-status: open
+status: in_progress
 priority: 2
 deps: [config-resolution, match-engine]
 attachments: []
 created: 2026-11-10T06:39:06Z
-updated: 2026-11-10T06:40:40Z
+updated: 2026-11-10T07:38:13Z
 ---
 # verify command: human output and exit codes
 
@@ -25,3 +25,9 @@ Done when:
 - Criterion 6 is asserted here too, as a regression on the engine output: `Assisted-by: Amp` reports one match.
 - The output block matches spec §5.4 in field order and wording.
 - Exit codes are asserted for the clean path, the match path, the missing-file path, and the unsupported-flag path.
+
+Blocked on a spec contradiction (needs a human decision before this ticket can close):
+- Criterion 4 second half FAILS: "The same text with two leading spaces exits 1". Observed exit 0. The code matches §5.1 and §5.2; the criterion contradicts them. §5.1 keeps the line (only a first-column '#' is a comment), so it reaches matching; but §5.2's trailer target tests lines matching ^([A-Za-z0-9][A-Za-z0-9-]*):[ \t]*(.+)$, which cannot match a line with two leading spaces. So the line has no trailer shape, and no shipped line/subject pattern claims it.
+- Pinned by tests/verify.rs::pin_an_indented_co_author_trailer_does_not_report_today and ::an_indented_co_author_trailer_carries_no_trailer_shape.
+- Everything else in scope passes: criteria 1, 2, 3, 5, 6, 7, 8 through the binary, criterion 12 through the binary, and the §5.4 block byte-identical to the spec example. --json is rejected with exit 2, as verify-json owns it.
+- Resolution options: (a) amend criterion 4 to say the indented text exits 0, matching §5.1 and §5.2 as written; (b) amend §5.2 to allow leading whitespace in the trailer expression, which changes matching for every trailer pattern; (c) add a line pattern that catches indented attribution. (a) is the smallest edit and changes no behaviour.
