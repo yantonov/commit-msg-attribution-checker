@@ -1,10 +1,11 @@
 ---
-status: open
+status: closed
 priority: 2
 deps: [config-resolution]
 attachments: []
 created: 2026-11-10T06:38:58Z
-updated: 2026-11-10T06:41:10Z
+updated: 2026-11-10T07:21:00Z
+closed-at: 2026-11-10T07:21:00Z
 ---
 # config show
 

@@ -5,7 +5,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use crate::defaults::defaults_toml;
+use crate::defaults::{default_patterns, defaults_toml};
 use crate::resolve::{self, Inputs};
 
 /// Prefix on every diagnostic, so a hook log names the tool (spec §6).
@@ -38,6 +38,59 @@ fn write_defaults(out: &mut impl Write) -> io::Result<()> {
     // An explicit flush reports a failure on the last buffered block, which a
     // process exit would otherwise swallow.
     out.flush()
+}
+
+/// `config show`: write the effective config to stdout, with a header comment
+/// naming the source (spec §6).
+///
+/// The body is the loaded [`Config`](crate::config::Config) re-serialized, not
+/// the file text: a hand-edited file keeps its unreadable formatting in the
+/// file, and the command exists to show what `verify` will apply.
+///
+/// Every load failure is exit 2 with the reason on stderr (spec §3.2, §6). The
+/// message is printed once: [`LoadError`](crate::resolve::LoadError) already
+/// names the path.
+pub fn config_show(flag: Option<PathBuf>) -> ExitCode {
+    let inputs = Inputs::from_env(flag);
+    // `default_patterns` is the resolver's step 4, so the fallback list shown
+    // here is the shipped one (spec §3.2).
+    let resolved = match resolve::resolve(&inputs, default_patterns) {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            eprintln!("{NAME}: config show: {error}");
+            return ExitCode::from(error.exit_code());
+        }
+    };
+
+    let document = match document(&resolved) {
+        Ok(document) => document,
+        Err(error) => {
+            eprintln!("{NAME}: config show: {error}");
+            return ExitCode::from(2);
+        }
+    };
+
+    let mut stdout = io::stdout().lock();
+    match stdout
+        .write_all(document.as_bytes())
+        .and_then(|()| stdout.flush())
+    {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("{NAME}: config show: writing to stdout: {err}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+/// The header comment and the serialized config.
+///
+/// The header is a comment so the whole output still loads through
+/// `Config::parse`; one line, then no blank line, because a blank line between
+/// the comment and the document reads like part of the header.
+fn document(resolved: &resolve::Resolved) -> Result<String, toml::ser::Error> {
+    let body = resolved.config.to_toml()?;
+    Ok(format!("# source: {}\n{body}", resolved.source))
 }
 
 /// `config create`: write the built-in config to the resolved path and print
@@ -274,6 +327,88 @@ mod tests {
         let err = write_defaults(&mut FailingWriter).expect_err("the writer fails");
 
         assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+    }
+
+    fn resolved(source: resolve::Source, text: &str) -> resolve::Resolved {
+        resolve::Resolved {
+            source,
+            config: crate::config::Config::parse(text).expect("the fixture parses"),
+        }
+    }
+
+    #[test]
+    fn show_names_the_source_path_in_one_header_comment() {
+        let path = PathBuf::from("/etc/commit-msg-attribution-checker/config.toml");
+        let resolved = resolved(
+            resolve::Source::File(path.clone()),
+            "version = 1\n\n[[pattern]]\nid = \"p\"\ndescription = \"d\"\ntarget = \"line\"\nregex = \"x\"\n",
+        );
+
+        let document = document(&resolved).expect("the model serializes");
+        let expected = format!("# source: {}", path.display());
+
+        assert_eq!(
+            document.lines().next(),
+            Some(expected.as_str()),
+            "{document}"
+        );
+        assert_eq!(
+            document
+                .lines()
+                .filter(|line| line.starts_with('#'))
+                .count(),
+            1,
+            "exactly one header line:\n{document}"
+        );
+    }
+
+    #[test]
+    fn show_headers_the_built_in_defaults() {
+        let resolved = resolve::Resolved {
+            source: resolve::Source::BuiltInDefaults,
+            config: crate::defaults::default_patterns(),
+        };
+
+        let document = document(&resolved).expect("the model serializes");
+
+        assert_eq!(document.lines().next(), Some("# source: built-in defaults"));
+        // The defaults carry `version = 1`, so the fallback case emits it
+        // without the command inventing one (spec §3.4).
+        assert!(document.contains("\nversion = 1\n"), "{document}");
+        assert_eq!(
+            document.matches("[[pattern]]").count(),
+            crate::defaults::default_patterns().patterns.len()
+        );
+    }
+
+    #[test]
+    fn show_body_is_the_model_not_the_file_text() {
+        // The point of re-serializing: a file that loads with odd formatting
+        // must come back canonical, or `config show` would just be `cat`.
+        let text = "  version=1 # mine\n\n[[pattern]]\n  target = 'subject'\n id='p'\n  regex = '^a'\n description = 'd'\n";
+        let resolved = resolved(resolve::Source::BuiltInDefaults, text);
+
+        let document = document(&resolved).expect("the model serializes");
+        let body = document.lines().skip(1).collect::<Vec<_>>().join("\n");
+
+        assert!(body.starts_with("version = 1\n"), "{document}");
+        assert!(!body.contains("# mine"), "{document}");
+        assert!(!body.contains("target = '"), "{document}");
+        crate::config::Config::parse(&document).expect("the output loads back");
+    }
+
+    #[test]
+    fn show_of_an_empty_pattern_list_keeps_only_the_header() {
+        // spec §3.3: no `[[pattern]]` entry disables all checking, so this is a
+        // real configuration and the output must still load.
+        let resolved = resolved(resolve::Source::BuiltInDefaults, "version = 1\n");
+
+        let document = document(&resolved).expect("the model serializes");
+
+        assert!(!document.contains("[[pattern]]"), "{document}");
+        let reloaded = crate::config::Config::parse(&document)
+            .unwrap_or_else(|err| panic!("{err}\n{document}"));
+        assert!(reloaded.patterns.is_empty());
     }
 
     fn scratch(name: &str) -> PathBuf {

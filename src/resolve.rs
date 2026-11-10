@@ -5,10 +5,6 @@
 //! to touch process globals and no result depends on the home directory of the
 //! machine that runs it.
 
-// Reachable once `verify`, `config show` and `config create` land; clippy runs
-// with -D warnings, so the module stays quiet until then.
-#![allow(dead_code)]
-
 use std::fmt;
 use std::fs;
 use std::io;

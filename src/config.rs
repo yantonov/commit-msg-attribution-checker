@@ -5,8 +5,9 @@
 //! `config-resolution` ticket — so the whole model is a pure function and no
 //! error can exit the process.
 
-// Every item here is public but unreferenced until the config and verify
-// commands land, and clippy runs with -D warnings.
+// `ConfigError::exit_code` stays unreferenced until `verify` prints a config
+// error itself: every command that loads a config reaches it through
+// `LoadError`, which carries the status. clippy runs with -D warnings.
 #![allow(dead_code)]
 
 use std::collections::HashSet;
@@ -115,6 +116,59 @@ impl Config {
             patterns,
         })
     }
+
+    /// The loaded config as TOML, for `config show` (spec §6).
+    ///
+    /// Rendered from the loaded model, not from the file text: hand-edited
+    /// spacing, single quotes and comments do not survive, the records do. Field
+    /// order follows the schema example in spec §3.4, so the output reads like
+    /// the document a user is expected to write.
+    ///
+    /// `version` is written only when the file carried one: this reports what is
+    /// in effect, and a file without a version keeps none (spec §3.4).
+    pub fn to_toml(&self) -> Result<String, toml::ser::Error> {
+        let pattern: Vec<RenderedPattern<'_>> = self
+            .patterns
+            .iter()
+            .map(|pattern| RenderedPattern {
+                id: &pattern.id,
+                description: &pattern.description,
+                target: pattern.target,
+                // Only trailer patterns carry a key, because this model rejects
+                // a key on any other target, so writing one would emit a
+                // document that `Config::parse` refuses (spec §3.4).
+                key: pattern.key.as_deref(),
+                // A compiled regex cannot be written back, and `as_str` is the
+                // text it was compiled from.
+                regex: pattern.regex.as_str(),
+            })
+            .collect();
+
+        toml::to_string(&RenderedFile {
+            version: self.version.as_ref(),
+            pattern,
+        })
+    }
+}
+
+/// The document `config show` prints for a loaded config.
+#[derive(Serialize)]
+struct RenderedFile<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<&'a toml::Value>,
+    /// Serialized as a TOML array of tables, `[[pattern]]` (spec §3.4).
+    #[serde(rename = "pattern")]
+    pattern: Vec<RenderedPattern<'a>>,
+}
+
+#[derive(Serialize)]
+struct RenderedPattern<'a> {
+    id: &'a str,
+    description: &'a str,
+    target: Target,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    key: Option<&'a str>,
+    regex: &'a str,
 }
 
 /// A config file that cannot be used. Every variant is a config error, which
@@ -490,6 +544,93 @@ regex = '\S'
                 "{text}"
             );
         }
+    }
+
+    #[test]
+    fn to_toml_round_trips_the_loaded_model() {
+        // `config show` prints this text, and the printed text must be a config
+        // the binary can apply, so every field has to survive the round trip.
+        let config = Config::parse(VALID).expect("valid config");
+        let text = config.to_toml().expect("the model serializes");
+        let reloaded = Config::parse(&text).unwrap_or_else(|err| panic!("{err}\n{text}"));
+
+        assert_eq!(
+            reloaded.version.and_then(|value| value.as_integer()),
+            Some(1)
+        );
+        assert_eq!(reloaded.patterns.len(), config.patterns.len());
+        for (before, after) in config.patterns.iter().zip(&reloaded.patterns) {
+            assert_eq!(after.id, before.id);
+            assert_eq!(after.description, before.description, "{}", before.id);
+            assert_eq!(after.target, before.target, "{}", before.id);
+            assert_eq!(after.key, before.key, "{}", before.id);
+            assert_eq!(
+                after.regex.as_str(),
+                before.regex.as_str(),
+                "{}: the regex text is the compiled source",
+                before.id
+            );
+        }
+    }
+
+    #[test]
+    fn to_toml_writes_the_schema_field_order() {
+        let config = Config::parse(VALID).expect("valid config");
+        let text = config.to_toml().expect("the model serializes");
+
+        assert!(text.starts_with("version = 1\n"), "{text}");
+        let first = text
+            .find("[[pattern]]")
+            .unwrap_or_else(|| panic!("a pattern table: {text}"));
+        let header = &text[first..];
+        let id = header.find("id = \"").expect("id is emitted");
+        let description = header
+            .find("description = ")
+            .expect("description is emitted");
+        let target = header.find("target = ").expect("target is emitted");
+        let key = header.find("key = ").expect("key is emitted");
+        let regex = header.find("regex = ").expect("regex is emitted");
+        assert!(
+            id < description && description < target && target < key && key < regex,
+            "spec §3.4 order is id, description, target, key, regex:\n{header}"
+        );
+    }
+
+    #[test]
+    fn to_toml_omits_a_version_the_file_did_not_carry() {
+        // spec §3.4: `version` is informational, so a file without one must not
+        // grow a `version = 1` in `config show`.
+        let config = Config::parse(
+            "[[pattern]]\nid = \"p\"\ndescription = \"d\"\ntarget = \"line\"\nregex = \"x\"\n",
+        )
+        .expect("valid config");
+        let text = config.to_toml().expect("the model serializes");
+
+        assert!(!text.contains("version"), "{text}");
+        assert!(Config::parse(&text).is_ok(), "{text}");
+    }
+
+    #[test]
+    fn to_toml_keeps_an_unusual_version_value() {
+        // The field is `toml::Value`, so a value this crate cannot name must
+        // still be reported rather than dropped or normalized.
+        let config = Config::parse("version = [1, 2]\n").expect("version accepts any TOML value");
+        let text = config.to_toml().expect("the model serializes");
+        let reloaded = Config::parse(&text).unwrap_or_else(|err| panic!("{err}\n{text}"));
+
+        assert_eq!(reloaded.version, config.version, "{text}");
+    }
+
+    #[test]
+    fn to_toml_of_an_empty_pattern_list_is_a_loadable_document() {
+        // spec §3.3: a file with no `[[pattern]]` entry disables all checking,
+        // so `config show` prints no table and the result still loads.
+        let config = Config::parse("version = 1\n").expect("valid config");
+        let text = config.to_toml().expect("the model serializes");
+
+        assert!(!text.contains("[[pattern]]"), "{text}");
+        let reloaded = Config::parse(&text).unwrap_or_else(|err| panic!("{err}\n{text}"));
+        assert!(reloaded.patterns.is_empty());
     }
 
     #[test]
