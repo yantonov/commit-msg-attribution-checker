@@ -1,5 +1,4 @@
 ## Active
-- [>] verify command: human output and exit codes #cmd-verify <- [config-resolution, match-engine]
 - [ ] End-to-end acceptance suite #acceptance <- [cmd-config-create, cmd-verify]
 - [ ] Decide whether aider.author-name should match a rendered ident #ehpbco
 - [ ] verify --json output #verify-json <- [cmd-verify]
@@ -18,3 +17,4 @@
 - [x] config create #cmd-config-create <- [cmd-config-defaults]
 - [x] config show #cmd-config-show <- [config-resolution]
 - [x] Identity targets via git var #identity-targets <- [match-engine]
+- [x] verify command: human output and exit codes #cmd-verify <- [config-resolution, match-engine]

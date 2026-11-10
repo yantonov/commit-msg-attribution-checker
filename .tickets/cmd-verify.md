@@ -1,10 +1,11 @@
 ---
-status: in_progress
+status: closed
 priority: 2
 deps: [config-resolution, match-engine]
 attachments: []
 created: 2026-11-10T06:39:06Z
-updated: 2026-11-10T07:38:13Z
+updated: 2026-11-10T07:47:27Z
+closed-at: 2026-11-10T07:47:27Z
 ---
 # verify command: human output and exit codes
 
@@ -31,3 +32,8 @@ Blocked on a spec contradiction (needs a human decision before this ticket can c
 - Pinned by tests/verify.rs::pin_an_indented_co_author_trailer_does_not_report_today and ::an_indented_co_author_trailer_carries_no_trailer_shape.
 - Everything else in scope passes: criteria 1, 2, 3, 5, 6, 7, 8 through the binary, criterion 12 through the binary, and the §5.4 block byte-identical to the spec example. --json is rejected with exit 2, as verify-json owns it.
 - Resolution options: (a) amend criterion 4 to say the indented text exits 0, matching §5.1 and §5.2 as written; (b) amend §5.2 to allow leading whitespace in the trailer expression, which changes matching for every trailer pattern; (c) add a line pattern that catches indented attribution. (a) is the smallest edit and changes no behaviour.
+
+Resolved: a human chose option (a), so this ticket closes.
+- doc/spec.md §5.1 gained a paragraph stating that a line which is not a comment is not thereby claimed, and §8 criterion 4 now says the indented text exits 0.
+- The pinning test is renamed an_indented_co_author_trailer_is_clean; it now asserts the settled contract rather than documenting a conflict.
+- No behaviour changed: the code already matched §5.1 and §5.2.

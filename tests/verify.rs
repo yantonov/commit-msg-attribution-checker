@@ -269,20 +269,11 @@ fn a_comment_line_is_clean() {
     assert_clean(&run_verify(&scratch, &commented, HUMAN_IDENT));
 }
 
-// spec §8 criterion 4, second half. This test pins what the code does today,
-// which is NOT what the criterion says; closing that gap is a spec decision.
-//
-// - §5.1 keeps `  # Co-authored-by: ...` as a matchable line, because only a `#`
-//   in the first column is a comment.
-// - §5.2's trailer target tests "every line that matches
-//   `^([A-Za-z0-9][A-Za-z0-9-]*):[ 	]*(.+)$`", and that expression cannot match
-//   a line with two leading spaces.
-//
-// The line therefore survives §5.1 but carries no trailer shape, and no shipped
-// `line` or `subject` pattern claims it: the run is clean. Reaching exit 1 needs
-// a spec edit on one of the two sections, not a patch here.
+// spec §8 criterion 4, second half: an indented attribution is not a comment
+// line (§5.1), but §5.2's trailer expression is anchored at the line start, so
+// it has no trailer shape and no shipped pattern claims it. The line is clean.
 #[test]
-fn pin_an_indented_co_author_trailer_does_not_report_today() {
+fn an_indented_co_author_trailer_is_clean() {
     let scratch = Scratch::new("indented");
     let indented = scratch.message(
         "indented",
@@ -295,9 +286,9 @@ fn pin_an_indented_co_author_trailer_does_not_report_today() {
     assert_clean(&run_verify(&scratch, &indented, HUMAN_IDENT));
 }
 
-// The same leading spaces without the `#`, so the pinned case above is read as
-// what it is: the trailer shape is what decides, and a leading space is enough
-// to lose it. §5.1's comment rule never has to be invoked for this line.
+// The same leading spaces without the `#`, so the case above is read as what it
+// is: the trailer shape is what decides, and a leading space is enough to lose
+// it. §5.1's comment rule never has to be invoked for this line.
 #[test]
 fn an_indented_co_author_trailer_carries_no_trailer_shape() {
     let scratch = Scratch::new("indented-trailer");
