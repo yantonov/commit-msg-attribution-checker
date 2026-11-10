@@ -1,10 +1,11 @@
 ---
-status: open
+status: closed
 priority: 0
 deps: []
 attachments: []
 created: 2026-11-10T06:38:46Z
-updated: 2026-11-10T06:40:42Z
+updated: 2026-11-10T06:47:03Z
+closed-at: 2026-11-10T06:47:03Z
 ---
 # App placeholder: cargo scaffold
 

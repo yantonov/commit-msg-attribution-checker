@@ -1,5 +1,4 @@
 ## Active
-- [ ] App placeholder: cargo scaffold #app-placeholder
 - [ ] Minimal harness: AGENTS.md and Makefile #minimal-harness <- [app-placeholder]
 - [ ] Config model and schema validation #config-model <- [app-placeholder]
 - [ ] Config resolution order #config-resolution <- [app-placeholder]
@@ -17,3 +16,4 @@
 - [ ] Dogfood the checker on this repo #dogfood <- [hook-integration]
 
 ## Closed
+- [x] App placeholder: cargo scaffold #app-placeholder
