@@ -1,10 +1,11 @@
 ---
-status: open
+status: closed
 priority: 1
 deps: [app-placeholder]
 attachments: []
 created: 2026-11-10T06:39:01Z
-updated: 2026-11-10T06:40:19Z
+updated: 2026-11-10T07:03:16Z
+closed-at: 2026-11-10T07:03:16Z
 ---
 # Message parsing: comment lines and trailers
 
