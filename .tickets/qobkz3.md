@@ -1,10 +1,11 @@
 ---
-status: in_progress
+status: closed
 priority: 2
 deps: []
 attachments: []
 created: 2026-11-10T08:28:23Z
-updated: 2026-11-10T08:28:28Z
+updated: 2026-11-10T08:28:40Z
+closed-at: 2026-11-10T08:28:40Z
 ---
 # README: title the tool, fix the summary line, shorten Motivation
 The README opens with two lines that are both wrong in the same way: neither says
