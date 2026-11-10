@@ -13,10 +13,14 @@ use std::collections::HashSet;
 use std::fmt;
 
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// The value a pattern is tested against (spec §5.2).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+///
+/// `Serialize` exists for the default registry: it renders the same target
+/// names the file uses, so the emitted config and this model cannot spell a
+/// target differently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Target {
     Trailer,
