@@ -3,6 +3,12 @@
 Reject a commit message that records LLM-agent attribution. Installed as a
 `commit-msg` hook, the exit status aborts the commit.
 
+## Table of contents
+
+- [Motivation](#motivation)
+- [Install as a hook](#install-as-a-hook)
+- [Or register it with krok](#or-register-it-with-krok)
+
 ## Motivation
 
 A `Made-with` or `Generated-by` line names the tool and the session that
@@ -11,12 +17,6 @@ information does not. The class is not specific to AI: `Co-authored-by`
 already credits an operating system or a hardware vendor. A match here means
 a configured pattern matched, never that an agent wrote the code, and a
 `Co-authored-by` naming a person passes.
-
-## Table of contents
-
-- [Motivation](#motivation)
-- [Install as a hook](#install-as-a-hook)
-- [Or register it with krok](#or-register-it-with-krok)
 
 ## Install as a hook
 

@@ -1,4 +1,5 @@
 ## Active
+- [>] README: move Motivation below the table of contents #lde4d
 
 ## Closed
 - [x] App placeholder: cargo scaffold #app-placeholder
