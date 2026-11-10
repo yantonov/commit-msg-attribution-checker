@@ -1,9 +1,15 @@
 //! Command implementations (spec §6).
 
+use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use crate::defaults::defaults_toml;
+use crate::resolve::{self, Inputs};
+
+/// Prefix on every diagnostic, so a hook log names the tool (spec §6).
+const NAME: &str = "commit-msg-attribution-checker";
 
 /// `config defaults`: write the built-in config as TOML to stdout.
 ///
@@ -32,6 +38,208 @@ fn write_defaults(out: &mut impl Write) -> io::Result<()> {
     // An explicit flush reports a failure on the last buffered block, which a
     // process exit would otherwise swallow.
     out.flush()
+}
+
+/// `config create`: write the built-in config to the resolved path and print
+/// that path (spec §6).
+///
+/// The bytes are [`defaults_toml`]'s, untouched, so the created file is what
+/// `config defaults` prints (spec §10). The path comes from the resolution
+/// order of spec §3.2, so `--config` and the environment variable decide where
+/// the file goes and no run depends on the machine's home directory.
+pub fn config_create(flag: Option<PathBuf>) -> ExitCode {
+    let inputs = Inputs::from_env(flag);
+    let path = match create(&inputs) {
+        Ok(path) => path,
+        Err(error) => {
+            // The reason and the path share stderr: a caller that reads stdout
+            // for the written path must not see one at exit 2.
+            eprintln!("{NAME}: config create: {error}");
+            return ExitCode::from(2);
+        }
+    };
+
+    let mut stdout = io::stdout().lock();
+    // Only the path, so `$(config create)` is usable as the file name.
+    match writeln!(stdout, "{}", path.display()).and_then(|()| stdout.flush()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!(
+                "{NAME}: config create: {}: writing to stdout: {err}",
+                path.display()
+            );
+            ExitCode::from(2)
+        }
+    }
+}
+
+/// Why `config create` refused. Every variant is exit 2 (spec §6).
+#[derive(Debug)]
+enum CreateError {
+    /// Neither `--config`, nor the environment variable, nor the default path
+    /// names a file, so there is nowhere to write.
+    NoPath,
+    /// The target exists. spec §6: the file is left byte-identical.
+    Exists { path: PathBuf },
+    /// Creating a directory, writing the temporary file, or claiming the target
+    /// name failed.
+    Io { path: PathBuf, source: io::Error },
+}
+
+impl std::fmt::Display for CreateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CreateError::NoPath => write!(
+                f,
+                "no config path: pass --config <path> or set {}",
+                resolve::ENV_CONFIG
+            ),
+            CreateError::Exists { path } => write!(
+                f,
+                "{}: already exists; edit it, move it, or remove it",
+                path.display()
+            ),
+            CreateError::Io { path, source } => write!(f, "{}: {source}", path.display()),
+        }
+    }
+}
+
+/// Write the defaults at the resolved path and return the absolute path.
+///
+/// The steps are ordered so that nothing is created when the command is going
+/// to refuse: the target is checked first, then the directories, then the file.
+fn create(inputs: &Inputs) -> Result<PathBuf, CreateError> {
+    let path = resolve::target_path(inputs).ok_or(CreateError::NoPath)?;
+    // spec §6 prints the absolute path; a relative `--config` is resolved
+    // against the working directory. `std::path::absolute` is used rather than
+    // `canonicalize` because the file does not exist yet, and because it must
+    // not rewrite the path through symbolic links the user did not name.
+    let path = std::path::absolute(&path).map_err(|source| CreateError::Io {
+        path: path.clone(),
+        source,
+    })?;
+
+    check_absent(&path)?;
+
+    // `absolute` leaves the path below the working directory for a bare file
+    // name, so the parent is always present; the fallback keeps that implicit.
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).map_err(|source| CreateError::Io {
+        path: parent.to_path_buf(),
+        source,
+    })?;
+
+    write_atomically(&path)?;
+    Ok(path)
+}
+
+/// The fast refusal, which also keeps `create` from calling `create_dir_all`
+/// for a user who already has a config. The publish below is what actually
+/// enforces spec §6, including against a concurrent run.
+///
+/// `symlink_metadata` rather than `exists`, so a dangling symbolic link counts
+/// as occupied: writing through it would put the file outside the named path.
+fn check_absent(path: &Path) -> Result<(), CreateError> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Err(CreateError::Exists {
+            path: path.to_path_buf(),
+        }),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(CreateError::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+/// Write the defaults through a temporary name in the target's own directory,
+/// then claim the target name.
+///
+/// Same directory, so the publish cannot cross a file system boundary. A run
+/// that dies mid-write leaves the target absent, never half-written: the bytes
+/// become visible only when the whole file exists under the temp name.
+///
+/// This is the temp-file-and-rename shape the ticket asks for, with the publish
+/// step done as a hard link. That is a deliberate deviation: `fs::rename`
+/// replaces an existing target on Unix (`rename(2)`) and on Windows
+/// (`MOVEFILE_REPLACE_EXISTING`), so with a rename the target's existence would
+/// depend only on the check above, which a concurrent run can race. The link
+/// keeps the same intent and adds the guarantee.
+fn write_atomically(path: &Path) -> Result<(), CreateError> {
+    let temp = temp_path(path)?;
+    let bytes = defaults_toml();
+
+    let published = write_temp(&temp, bytes.as_bytes(), path).and_then(|()| publish(&temp, path));
+    if published.is_err() {
+        // The target is untouched on every failure path, so drop the temporary
+        // file rather than leave a stray file beside a user's config.
+        let _ = fs::remove_file(&temp);
+    }
+    published
+}
+
+fn temp_path(path: &Path) -> Result<PathBuf, CreateError> {
+    let name = path.file_name().ok_or_else(|| CreateError::Io {
+        path: path.to_path_buf(),
+        source: io::Error::new(io::ErrorKind::InvalidInput, "the path names no file"),
+    })?;
+
+    let mut temp = name.to_os_string();
+    // The process id keeps a temporary file from an interrupted run from
+    // blocking the next one, and `create_new` below keeps two live runs apart.
+    temp.push(format!(".{}.tmp", std::process::id()));
+    Ok(path.with_file_name(temp))
+}
+
+fn write_temp(temp: &Path, bytes: &[u8], path: &Path) -> Result<(), CreateError> {
+    let io_error = |target: &Path, source| CreateError::Io {
+        path: target.to_path_buf(),
+        source,
+    };
+
+    // `create_new` refuses a name that already exists, so a concurrent run is
+    // reported instead of silently reused. The error names the temporary file,
+    // because that is the name already taken; the name derives from the target,
+    // so the message still points at the config.
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(temp)
+        .map_err(|source| io_error(temp, source))?;
+
+    file.write_all(bytes)
+        .map_err(|source| io_error(path, source))?;
+    // `sync_all` before the publish is what makes "the file is there" mean "the
+    // bytes are on disk", so a crash after the publish cannot truncate it.
+    file.sync_all().map_err(|source| io_error(path, source))
+}
+
+/// Give the temp file's bytes the target name, failing when the target exists.
+///
+/// Not `fs::rename`: it replaces an existing target on Unix (`rename(2)`) and
+/// on Windows (`MOVEFILE_REPLACE_EXISTING`), so it cannot carry spec §6's
+/// "never overwrites". A hard link fails with `AlreadyExists` on both, and is
+/// atomic, so the target name either stays absent or names the complete file.
+fn publish(temp: &Path, path: &Path) -> Result<(), CreateError> {
+    match fs::hard_link(temp, path) {
+        Ok(()) => {}
+        Err(source) if source.kind() == io::ErrorKind::AlreadyExists => {
+            return Err(CreateError::Exists {
+                path: path.to_path_buf(),
+            });
+        }
+        Err(source) => {
+            return Err(CreateError::Io {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    }
+
+    // The target holds the complete bytes from here on, so a failure to drop
+    // the second name does not make the command a failure.
+    let _ = fs::remove_file(temp);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -66,5 +274,148 @@ mod tests {
         let err = write_defaults(&mut FailingWriter).expect_err("the writer fails");
 
         assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!("cmac-create-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).expect("creating the scratch directory");
+        path
+    }
+
+    #[test]
+    fn creates_the_file_and_the_parent_directories() {
+        let dir = scratch("parents");
+        let target = dir.join("a/b/c/config.toml");
+        let inputs = Inputs {
+            flag: Some(target.clone()),
+            ..Inputs::default()
+        };
+
+        let returned = create(&inputs).expect("a fresh path is written");
+
+        let text = fs::read_to_string(&target).expect("the file exists");
+        assert_eq!(
+            text,
+            defaults_toml(),
+            "spec §10: one serializer for the printed and the written bytes"
+        );
+        // The bytes are only useful if the binary can load them back, which is
+        // what a later `verify` will do.
+        crate::config::Config::parse(&text).expect("the created file is a valid config");
+        assert!(
+            returned.is_absolute(),
+            "{}: not absolute",
+            returned.display()
+        );
+        assert_eq!(fs::read_dir(dir.join("a/b/c")).unwrap().count(), 1);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn writes_without_leaving_a_temporary_file() {
+        // The temp name lives beside the target, so a leak would show up here as
+        // a second entry and would confuse a user editing the config.
+        let dir = scratch("temp");
+        let inputs = Inputs {
+            flag: Some(dir.join("config.toml")),
+            ..Inputs::default()
+        };
+
+        create(&inputs).expect("a fresh path is written");
+        let names: Vec<String> = fs::read_dir(&dir)
+            .expect("reading the scratch directory")
+            .map(|entry| {
+                entry
+                    .expect("an entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        assert_eq!(names, ["config.toml"], "{names:?}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn refuses_an_existing_target_and_leaves_it_identical() {
+        // spec §8 criterion 10, at the function level; the spawned-binary test
+        // in tests/config_create.rs asserts the exit status and the stream.
+        let dir = scratch("exists");
+        let target = dir.join("config.toml");
+        let original =
+            "[[pattern]]\nid = \"kept\"\ndescription = \"d\"\ntarget = \"line\"\nregex = \"x\"\n";
+        fs::write(&target, original).expect("writing the existing config");
+        let inputs = Inputs {
+            flag: Some(target.clone()),
+            ..Inputs::default()
+        };
+
+        let error = create(&inputs).expect_err("an existing target is refused");
+
+        assert!(matches!(error, CreateError::Exists { .. }), "{error}");
+        assert_eq!(fs::read_to_string(&target).unwrap(), original);
+        assert_eq!(
+            fs::read_dir(&dir).unwrap().count(),
+            1,
+            "no temp is left behind"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn refuses_when_the_target_name_is_a_directory() {
+        // An occupied name is enough to refuse; writing would need the name to
+        // become a file, which the user did not ask for.
+        let dir = scratch("occupied");
+        let target = dir.join("config.toml");
+        fs::create_dir(&target).expect("creating the directory");
+        let inputs = Inputs {
+            flag: Some(target.clone()),
+            ..Inputs::default()
+        };
+
+        let error = create(&inputs).expect_err("an occupied name is refused");
+
+        assert!(matches!(error, CreateError::Exists { .. }), "{error}");
+        assert!(target.is_dir(), "the directory is left alone");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn no_resolvable_path_is_an_error() {
+        // Nothing names a file, so there is nowhere to write, and the message
+        // names the inputs that would.
+        let error = create(&Inputs::default()).expect_err("no path is an error");
+
+        assert!(matches!(error, CreateError::NoPath), "{error}");
+        assert!(error.to_string().contains(resolve::ENV_CONFIG), "{error}");
+    }
+
+    #[test]
+    fn a_relative_path_is_resolved_against_the_working_directory() {
+        let relative = PathBuf::from(format!("cmac-relative-{}.toml", std::process::id()));
+        let absolute = std::path::absolute(&relative).expect("a working directory exists");
+        let _ = fs::remove_file(&absolute);
+        let inputs = Inputs {
+            flag: Some(relative),
+            ..Inputs::default()
+        };
+
+        let returned = create(&inputs).expect("a fresh relative path is written");
+
+        assert_eq!(returned, absolute);
+        assert!(
+            returned.is_absolute(),
+            "{}: not absolute",
+            returned.display()
+        );
+        assert_eq!(fs::read_to_string(&returned).unwrap(), defaults_toml());
+
+        let _ = fs::remove_file(&absolute);
     }
 }

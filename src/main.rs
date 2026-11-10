@@ -67,7 +67,7 @@ fn main() -> ExitCode {
         } => commands::config_defaults(),
         Commands::Config {
             action: ConfigAction::Create,
-        } => not_implemented("config create"),
+        } => commands::config_create(cli.config),
         Commands::Config {
             action: ConfigAction::Show,
         } => not_implemented("config show"),

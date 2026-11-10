@@ -1,10 +1,11 @@
 ---
-status: open
+status: closed
 priority: 2
 deps: [cmd-config-defaults]
 attachments: []
 created: 2026-11-10T06:38:57Z
-updated: 2026-11-10T06:40:47Z
+updated: 2026-11-10T07:17:14Z
+closed-at: 2026-11-10T07:17:14Z
 ---
 # config create
 

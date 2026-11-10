@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use crate::config::{Config, ConfigError};
 
 /// Environment variable naming a config file (spec §3.1).
-const ENV_CONFIG: &str = "COMMIT_MSG_ATTRIBUTION_CHECKER_CONFIG";
+pub(crate) const ENV_CONFIG: &str = "COMMIT_MSG_ATTRIBUTION_CHECKER_CONFIG";
 
 /// The path below the config directory (spec §3.1). Kept as one literal so the
 /// resolved path is exactly the path the spec names.
@@ -124,6 +124,21 @@ pub fn default_path(inputs: &Inputs) -> Option<PathBuf> {
         None => inputs.home.clone()?.join(".config"),
     };
     Some(base.join(LOCAL_PATH))
+}
+
+/// The path named by the first of `--config`, the environment variable and the
+/// default path (spec §3.2 steps 1 to 3).
+///
+/// This is the path half of [`resolve`], for `config create`, which normally
+/// runs while the file does not exist yet. It cannot use [`resolve`]: there a
+/// missing file at an explicit path is an error, and a missing file at the
+/// default path selects the built-in list, so neither returns the path.
+pub fn target_path(inputs: &Inputs) -> Option<PathBuf> {
+    inputs
+        .flag
+        .clone()
+        .or_else(|| inputs.env_var.clone())
+        .or_else(|| default_path(inputs))
 }
 
 /// Resolve and load the config in the order of spec §3.2.
@@ -574,6 +589,41 @@ mod tests {
             .expect("the flag path loads");
 
         assert_eq!(ids(&resolved), ["from-flag"]);
+    }
+
+    #[test]
+    fn the_target_path_follows_flag_then_env_var_then_default() {
+        let scratch = Scratch::new();
+        let flag = scratch.path.join("flag.toml");
+        let env_var = scratch.path.join("env.toml");
+        let xdg = scratch.path.join("xdg");
+        let home = scratch.path.join("home");
+
+        let all = Inputs {
+            flag: Some(flag.clone()),
+            env_var: Some(env_var.clone()),
+            xdg_config_home: Some(xdg.clone()),
+            home: Some(home.clone()),
+        };
+        assert_eq!(target_path(&all), Some(flag));
+
+        let env_only = Inputs {
+            flag: None,
+            env_var: Some(env_var.clone()),
+            ..all.clone()
+        };
+        assert_eq!(target_path(&env_only), Some(env_var));
+
+        let default_only = Inputs {
+            xdg_config_home: Some(xdg.clone()),
+            home: Some(home.clone()),
+            ..Inputs::default()
+        };
+        assert_eq!(target_path(&default_only), Some(xdg.join(LOCAL_PATH)));
+
+        // Nothing names a path, so there is nowhere to write: `config create`
+        // reports that instead of inventing a location.
+        assert_eq!(target_path(&Inputs::default()), None);
     }
 
     #[test]
