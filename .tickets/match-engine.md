@@ -1,10 +1,11 @@
 ---
-status: open
+status: closed
 priority: 1
 deps: [config-model, msg-parsing]
 attachments: []
 created: 2026-11-10T06:39:03Z
-updated: 2026-11-10T06:40:29Z
+updated: 2026-11-10T07:05:51Z
+closed-at: 2026-11-10T07:05:51Z
 ---
 # Match engine with trailer gate
 
