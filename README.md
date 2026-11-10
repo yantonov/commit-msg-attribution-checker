@@ -1,28 +1,16 @@
-CLI tool to validate commits
+# commit-msg-attribution-checker
+
+Reject a commit message that records LLM-agent attribution. Installed as a
+`commit-msg` hook, the exit status aborts the commit.
 
 ## Motivation
 
-Attribution trailers and footers name the tool that produced a change. They do
-not describe the change. A reader of history has to filter them out to reach
-the subject, the reasoning and the review context that a commit exists to
-carry.
-
-The noise grows while the information does not. Attribution is per tool and
-per session, so it accumulates with every agent, editor and harness in use,
-and two commits with identical content read differently only because of which
-tool touched them.
-
-Nor is the class specific to AI. Co-author and made-with lines already credit
-operating systems, hardware vendors and other tools, because they record who
-or what was involved in producing the commit. That is metadata about the
-making, not about the merit or the content of the change.
-
-So this tool rejects the trailers that exist only to record making: a
-`Made-with`, `Generated-by` or `Assisted-by` line blocks whatever it names,
-and a `Co-authored-by` blocks when it names a known agent identity. It makes
-no claim about how the code was written: a match means a configured pattern
-matched, never that an agent authored the change, and a `Co-authored-by`
-naming a person passes.
+A `Made-with` or `Generated-by` line names the tool and the session that
+produced a commit, not what the change does, so the noise grows while the
+information does not. The class is not specific to AI: `Co-authored-by`
+already credits an operating system or a hardware vendor. A match here means
+a configured pattern matched, never that an agent wrote the code, and a
+`Co-authored-by` naming a person passes.
 
 ## Table of contents
 

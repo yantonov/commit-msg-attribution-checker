@@ -1,4 +1,5 @@
 ## Active
+- [>] README: title the tool, fix the summary line, shorten Motivation #qobkz3
 
 ## Closed
 - [x] App placeholder: cargo scaffold #app-placeholder
