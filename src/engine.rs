@@ -600,20 +600,31 @@ mod tests {
     }
 
     #[test]
-    fn the_aider_name_pattern_does_not_match_a_rendered_ident() {
-        // A gap to decide on, not a behaviour to rely on: spec §4.5 anchors
-        // `aider.author-name` at the end of the value, and spec §5.2 renders an
-        // ident as `Name <email>`, so a real aider author read through `git var`
-        // ends its value with the email and the anchored pattern misses it.
-        // Changing the default is a spec and registry change, so this test pins
-        // what the shipped registry does today.
+    fn the_aider_name_pattern_matches_a_rendered_ident() {
+        // spec §5.2 renders an ident as `Name <email>`, so `aider.author-name`
+        // must not be anchored at the end of the value: an end anchor never
+        // lands on the decoration and the pattern could not fire on a real
+        // ident read through `git var`.
         let found = run_identity(
             "Fix the parser\n",
             "Aider (aider) <aider@example.com>",
             "Ada Lovelace <ada@example.com>",
         );
 
-        assert!(found.is_empty(), "{found:#?}");
+        let ids: Vec<&str> = found.iter().map(|found| found.id.as_str()).collect();
+        assert_eq!(ids, ["aider.author-name"], "{found:#?}");
+    }
+
+    #[test]
+    fn an_aider_decoration_in_the_committer_matches() {
+        let found = run_identity(
+            "Fix the parser\n",
+            "Ada Lovelace <ada@example.com>",
+            "Aider (aider) <aider@example.com>",
+        );
+
+        let ids: Vec<&str> = found.iter().map(|found| found.id.as_str()).collect();
+        assert_eq!(ids, ["aider.committer-name"], "{found:#?}");
     }
 
     #[test]

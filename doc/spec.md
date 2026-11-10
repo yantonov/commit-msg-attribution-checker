@@ -199,8 +199,8 @@ trade-off theirs, not everyone's.
 
 | id | target | regex | description |
 | --- | --- | --- | --- |
-| `aider.author-name` | `author` | `(?i)\(aider\)\s*$` | Aider author-name decoration |
-| `aider.committer-name` | `committer` | `(?i)\(aider\)\s*$` | Aider committer-name decoration |
+| `aider.author-name` | `author` | `(?i)\(aider\)` | Aider author-name decoration |
+| `aider.committer-name` | `committer` | `(?i)\(aider\)` | Aider committer-name decoration |
 | `aider.subject` | `subject` | `(?i)^aider\s*:` | Aider subject prefix |
 
 ### 4.6 Agent identity in author or committer

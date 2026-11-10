@@ -1,5 +1,4 @@
 ## Active
-- [ ] Decide whether aider.author-name should match a rendered ident #ehpbco
 
 ## Closed
 - [x] App placeholder: cargo scaffold #app-placeholder
@@ -15,6 +14,7 @@
 - [x] Identity targets via git var #identity-targets <- [match-engine]
 - [x] verify command: human output and exit codes #cmd-verify <- [config-resolution, match-engine]
 - [x] End-to-end acceptance suite #acceptance <- [cmd-config-create, cmd-verify]
+- [x] Decide whether aider.author-name should match a rendered ident #ehpbco
 - [x] verify --json output #verify-json <- [cmd-verify]
 - [x] Hook integration and smoke test #hook-integration <- [cmd-verify]
 - [x] Dogfood the checker on this repo #dogfood <- [hook-integration]

@@ -178,14 +178,17 @@ const DEFAULT_PATTERNS: &[DefaultPattern] = &[
         description: "Aider author-name decoration",
         target: Target::Author,
         key: None,
-        regex: r"(?i)\(aider\)\s*$",
+        // Not anchored: spec §5.2 renders an ident as `Name <email>`, so an
+        // end anchor would never land on the decoration and the pattern could
+        // not fire on a real ident.
+        regex: r"(?i)\(aider\)",
     },
     DefaultPattern {
         id: "aider.committer-name",
         description: "Aider committer-name decoration",
         target: Target::Committer,
         key: None,
-        regex: r"(?i)\(aider\)\s*$",
+        regex: r"(?i)\(aider\)",
     },
     DefaultPattern {
         id: "aider.subject",

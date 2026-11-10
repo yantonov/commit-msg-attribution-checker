@@ -1,10 +1,11 @@
 ---
-status: open
+status: closed
 priority: 2
 deps: []
 attachments: []
 created: 2026-11-10T07:32:45Z
-updated: 2026-11-10T07:32:45Z
+updated: 2026-11-10T08:13:14Z
+closed-at: 2026-11-10T08:13:14Z
 ---
 # Decide whether aider.author-name should match a rendered ident
 
