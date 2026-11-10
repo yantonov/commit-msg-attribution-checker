@@ -1,10 +1,11 @@
 ---
-status: in_progress
+status: closed
 priority: 2
 deps: []
 attachments: []
 created: 2026-11-10T08:29:37Z
-updated: 2026-11-10T08:29:42Z
+updated: 2026-11-10T08:29:52Z
+closed-at: 2026-11-10T08:29:52Z
 ---
 # README: move Motivation below the table of contents
 The table of contents sits after Motivation, so its Motivation entry points back up to
