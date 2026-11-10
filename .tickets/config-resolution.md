@@ -1,10 +1,11 @@
 ---
-status: open
+status: closed
 priority: 1
 deps: [app-placeholder]
 attachments: []
 created: 2026-11-10T06:38:53Z
-updated: 2026-11-10T06:40:15Z
+updated: 2026-11-10T06:55:10Z
+closed-at: 2026-11-10T06:55:10Z
 ---
 # Config resolution order
 
