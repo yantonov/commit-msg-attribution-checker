@@ -299,6 +299,33 @@ commit-msg-attribution-checker: attribution detected
 `--json` on `verify` writes the matches as JSON for CI. Exit codes do not
 change.
 
+The document is one top-level object with the key `matches`, so a later version
+can add a key without breaking a reader.
+
+```json
+{"matches":[{"id":"co-authored-by.claude","description":"Co-authored-by trailer naming Claude","target":"trailer","value":"Claude <noreply@anthropic.com>","line":4}]}
+```
+
+Each entry carries exactly five keys, in this order: `id`, `description`,
+`target`, the matched `value`, and `line`. These are the values §5.3 records;
+`target` is the lowercase name from §5.2. `line` is a number, and `null` for an
+identity match: the key is present either way, so a reader can rely on a fixed
+key set. The trailer key is not a field. It is presentation, and `target`
+already says the match is a trailer.
+
+The document is compact, on one line, and ends with a newline.
+
+An empty match list is `{"matches":[]}` and exits 0. This is the one place the
+two formats differ in bytes: the human path writes nothing at all, and a JSON
+consumer needs an empty document to tell "found nothing" from "did not run".
+
+String values are escaped as JSON requires: `"` and `\` are escaped, `\b`,
+`\f`, `\n`, `\r` and `\t` use their short forms, every other character below
+`0x20` becomes `\u00XX`, and non-ASCII text is written as UTF-8.
+
+An error writes nothing to stdout and exits 2, so a consumer never parses a
+partial document as an empty match list.
+
 The tool writes config and usage errors to stderr and exits 2.
 
 ## 6. Commands

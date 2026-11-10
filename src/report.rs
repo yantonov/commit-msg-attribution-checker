@@ -8,6 +8,11 @@
 //! The wording is the spec's, so each piece of it appears exactly once here: the
 //! header, the position of a match, the stanza shape, and the singular of the
 //! closing count.
+//!
+//! [`render_json`] is the same matches for a CI consumer. It is hand-written
+//! because the crate set is fixed at five (spec §10) and `serde_json` is not one
+//! of them: five flat fields plus one integer need no serializer, and the
+//! escaping is pinned by the tests below.
 
 use crate::config::Target;
 use crate::engine::Match;
@@ -46,6 +51,85 @@ pub fn render(matches: &[Match]) -> Option<String> {
     block.push_str(&closing(matches.len()));
     block.push('\n');
     Some(block)
+}
+
+/// The `--json` document (spec §5.4): the matches as one compact JSON object.
+///
+/// Always a document, unlike [`render`]: an empty list is `{"matches":[]}`, so a
+/// CI job can tell "the tool ran and found nothing" from "the tool did not run".
+/// That divergence from the silent human path is deliberate, and it is why this
+/// function returns `String` rather than `Option`.
+///
+/// The shape, which spec §5.4 leaves to this implementation:
+///
+/// - one top-level object, so the document can gain a key without breaking a
+///   consumer that reads `matches`;
+/// - exactly five keys per match, in the order spec §5.3 lists them: `id`,
+///   `description`, `target`, `value`, `line`;
+/// - `line` is `null` for an identity match, and the key stays present so a
+///   consumer can rely on a stable set;
+/// - no `trailer_key`: the position text of the human block is presentation, and
+///   `target` already names the target a consumer branches on;
+/// - compact, one line, because a log or a pipe reads a machine document and the
+///   human block is what a person reads.
+///
+/// The trailing newline is part of the document's text rather than of the JSON,
+/// so the last line of a log is not left unterminated.
+pub fn render_json(matches: &[Match]) -> String {
+    let mut document = String::from("{\"matches\":[");
+    for (index, found) in matches.iter().enumerate() {
+        if index > 0 {
+            document.push(',');
+        }
+
+        document.push_str("{\"id\":");
+        push_json_string(&mut document, &found.id);
+        document.push_str(",\"description\":");
+        push_json_string(&mut document, &found.description);
+        document.push_str(",\"target\":");
+        // `Display` is the lowercase spec name (spec §5.2), so the JSON target
+        // and the config's `target` field cannot be spelled differently.
+        push_json_string(&mut document, &found.target.to_string());
+        document.push_str(",\"value\":");
+        push_json_string(&mut document, &found.value);
+        document.push_str(",\"line\":");
+        match found.line {
+            Some(line) => document.push_str(&line.to_string()),
+            None => document.push_str("null"),
+        }
+        document.push('}');
+    }
+    document.push_str("]}\n");
+    document
+}
+
+/// Append one JSON string literal, escaped as JSON requires.
+///
+/// A value can be a whole message line or a regex's subject text, so it is not
+/// restricted to what the shipped patterns happen to contain today: the two
+/// mandatory escapes and every control character below 0x20 are handled. `DEL`
+/// needs no escape in JSON and other non-ASCII text may appear raw, because the
+/// document is written as UTF-8.
+fn push_json_string(out: &mut String, value: &str) {
+    out.push('"');
+    for character in value.chars() {
+        match character {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{08}' => out.push_str("\\b"),
+            '\u{0c}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            // The remaining control characters have no short form, so JSON
+            // spells them as a four-digit code point.
+            character if (character as u32) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", character as u32));
+            }
+            character => out.push(character),
+        }
+    }
+    out.push('"');
 }
 
 /// Where a match applies, in the parentheses of its stanza.
@@ -258,5 +342,126 @@ commit-msg-attribution-checker: attribution detected
             .count();
         assert_eq!(stanzas, 3, "{block}");
         assert!(block.ends_with("3 matches. Commit rejected.\n"), "{block}");
+    }
+
+    #[test]
+    fn the_json_document_is_one_object_per_match_with_five_keys() {
+        // Key order is the order spec §5.3 lists the fields, and it is stable
+        // because this test states the bytes rather than reading them back.
+        let expected = "{\"matches\":[\
+            {\"id\":\"co-authored-by.claude\",\
+            \"description\":\"Co-authored-by trailer naming Claude\",\
+            \"target\":\"trailer\",\
+            \"value\":\"Claude <noreply@anthropic.com>\",\
+            \"line\":4},\
+            {\"id\":\"amp-thread-id\",\
+            \"description\":\"Provenance link to an Amp thread\",\
+            \"target\":\"trailer\",\
+            \"value\":\"https://ampcode.com/threads/T-019\",\
+            \"line\":5}\
+        ]}\n";
+
+        assert_eq!(render_json(&spec_example()), expected);
+    }
+
+    #[test]
+    fn an_empty_match_list_is_a_document_that_is_not_nothing() {
+        // The one deliberate divergence from the human path (spec §5.4): a CI
+        // consumer must be able to read "ran, found nothing".
+        assert_eq!(render_json(&[]), "{\"matches\":[]}\n");
+    }
+
+    #[test]
+    fn an_identity_match_keeps_the_line_key_and_nulls_it() {
+        // spec §5.3: an identity has no message line. A present line stays a
+        // JSON number, and the absent one is `null`, not a missing key or a 0.
+        let document = render_json(&[
+            found("a", "d", Target::Author, "A (aider)", None, None),
+            found("b", "d", Target::Subject, "aider: x", Some(1), None),
+        ]);
+
+        assert!(document.contains("\"line\":null}"), "{document}");
+        assert!(document.contains("\"line\":1}"), "{document}");
+    }
+
+    #[test]
+    fn a_trailer_key_is_not_a_json_field() {
+        // Deliberate: the ticket enumerates five fields, and a machine consumer
+        // branches on `id`, not on the presentation word the block prints.
+        let document = render_json(&spec_example());
+
+        assert!(!document.contains("trailer_key"), "{document}");
+        assert!(
+            document.contains("\"target\":\"trailer\""),
+            "the target still says it is a trailer: {document}"
+        );
+    }
+
+    #[test]
+    fn a_string_value_is_escaped_as_json_requires() {
+        // A value can be a whole message line or a regex's subject, so the
+        // emitter cannot assume the shipped patterns' character set. This covers
+        // the two mandatory escapes, every short form, and a bare C0 character.
+        let document = render_json(&[found(
+            "escapes",
+            "Escapes",
+            Target::Line,
+            "a\"b\\c\nd\re\tf\u{08}g\u{0c}h\u{01}i",
+            Some(1),
+            None,
+        )]);
+
+        assert!(
+            document.contains("\"value\":\"a\\\"b\\\\c\\nd\\re\\tf\\bg\\fh\\u0001i\""),
+            "{document}"
+        );
+        // The raw control characters must not survive into the document, or a
+        // consumer's parser would read a broken string.
+        assert!(
+            document.chars().all(|c| !c.is_control() || c == '\n'),
+            "{document:?}"
+        );
+    }
+
+    #[test]
+    fn the_keys_of_a_user_config_are_escaped_too() {
+        // `id` and `description` come from a user's config file, so they need
+        // the same treatment as `value`.
+        let document = render_json(&[found(
+            "id\"with\\escapes",
+            "line\nbreak",
+            Target::Line,
+            "v",
+            None,
+            None,
+        )]);
+
+        assert!(
+            document.contains("\"id\":\"id\\\"with\\\\escapes\""),
+            "{document}"
+        );
+        assert!(
+            document.contains("\"description\":\"line\\nbreak\""),
+            "{document}"
+        );
+    }
+
+    #[test]
+    fn a_non_ascii_value_is_emitted_raw() {
+        // UTF-8 is valid JSON text, so the emoji marker of spec §4.4 needs no
+        // escape and stays readable in a log.
+        let document = render_json(&[found(
+            "emoji",
+            "Emoji",
+            Target::Line,
+            "\u{1f916} Generated with Amp",
+            Some(2),
+            None,
+        )]);
+
+        assert!(
+            document.contains("\"value\":\"\u{1f916} Generated with Amp\""),
+            "{document}"
+        );
     }
 }

@@ -1,10 +1,11 @@
 ---
-status: open
+status: closed
 priority: 3
 deps: [cmd-verify]
 attachments: []
 created: 2026-11-10T06:39:07Z
-updated: 2026-11-10T06:40:23Z
+updated: 2026-11-10T07:53:32Z
+closed-at: 2026-11-10T07:53:32Z
 ---
 # verify --json output
 

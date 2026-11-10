@@ -18,7 +18,9 @@ const NAME: &str = "commit-msg-attribution-checker";
 /// `verify <msg-file>`: check one message file (spec §5.4, §6).
 ///
 /// Exit status is 0 for a clean message, 1 for a match and 2 for an error;
-/// nothing else leaves this function.
+/// nothing else leaves this function. `--json` changes the format of the report
+/// and nothing else: the same message yields the same status either way, which
+/// is what spec §5.4's "Exit codes do not change" means.
 ///
 /// The three inputs are read in the order the user can fix them: the message
 /// file, then the config, then the identity. A bad message path is the most
@@ -32,6 +34,7 @@ pub fn verify(
     config_flag: Option<PathBuf>,
     inputs: &identity::Inputs<'_>,
     verbose: bool,
+    json: bool,
 ) -> ExitCode {
     // spec §6: an unreadable message is an I/O error, and the message names the
     // path because that is what the user has to correct.
@@ -67,20 +70,31 @@ pub fn verify(
         }
     }
 
-    // spec §5.4: a clean message writes nothing at all, which is what the
-    // renderer's `None` says.
-    let Some(block) = report::render(&engine::run(&resolved.config, &message, Some(&identity)))
-    else {
-        return ExitCode::SUCCESS;
+    // spec §5.4: a clean message writes nothing at all on the human path, which
+    // is what the renderer's `None` says. The JSON path writes `{"matches":[]}`
+    // instead, because a CI consumer must tell an empty result from a silent
+    // failure. Every error above already returned before this point, so neither
+    // format can put a partial document on stdout.
+    let matches = engine::run(&resolved.config, &message, Some(&identity));
+    let report = if json {
+        report::render_json(&matches)
+    } else {
+        let Some(block) = report::render(&matches) else {
+            return ExitCode::SUCCESS;
+        };
+        block
     };
+    // spec §6: 1 means attribution was found. It is read off the matches rather
+    // than off the format, which is the whole point of the flag not changing the
+    // status: an empty JSON document exits 0 like the silent human path.
+    let status = if matches.is_empty() { 0 } else { 1 };
 
     let mut stdout = io::stdout().lock();
     match stdout
-        .write_all(block.as_bytes())
+        .write_all(report.as_bytes())
         .and_then(|()| stdout.flush())
     {
-        // spec §6: attribution found is status 1, and the block has been shown.
-        Ok(()) => ExitCode::from(1),
+        Ok(()) => ExitCode::from(status),
         Err(err) => {
             // The report did not reach the caller, so it must not be read as a
             // rejection the caller can act on: the write failure is an I/O

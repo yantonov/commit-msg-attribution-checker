@@ -572,30 +572,299 @@ fn an_unreadable_message_file_is_exit_2() {
     );
 }
 
+/// Strip the one trailing newline `render_json` adds and the JSON text, so a
+/// test can assert the document without restating that it ends a line.
+fn json_body(output: &Output) -> String {
+    let raw = stdout(output);
+    let body = raw
+        .strip_suffix('\n')
+        .unwrap_or_else(|| panic!("the JSON document ends with a newline: {raw:?}"));
+    body.to_owned()
+}
+
+/// Assert the one match-document shape a match must have: a top-level object,
+/// one entry, and the five keys spec §5.3 lists, in that order.
+fn assert_one_match_document(document: &str) {
+    assert!(
+        document.starts_with("{\"matches\":["),
+        "a top-level object, not a bare array: {document}"
+    );
+    assert!(document.ends_with("]}"), "{document}");
+    assert_eq!(
+        document.matches("\"id\":").count(),
+        1,
+        "one object per match: {document}"
+    );
+    let keys = [
+        "\"id\":",
+        "\"description\":",
+        "\"target\":",
+        "\"value\":",
+        "\"line\":",
+    ];
+    let mut cursor = 0;
+    for key in keys {
+        let at = document[cursor..]
+            .find(key)
+            .unwrap_or_else(|| panic!("{key} is missing: {document}"))
+            + cursor;
+        assert!(at >= cursor, "{key} is out of order: {document}");
+        cursor = at + key.len();
+    }
+}
+
 #[test]
-fn json_is_rejected_today() {
-    // spec §5.4 specifies `--json` for `verify`, and the `verify-json` ticket
-    // adds it. Until then the flag must be refused rather than silently ignored,
-    // so a caller cannot read a text report as machine output.
+fn json_writes_the_match_as_a_document_and_exits_1() {
+    // spec §5.4: `--json` writes the matches as JSON. This is the flag that
+    // used to be refused, so the test is the same fixture with the new outcome.
     let scratch = Scratch::new("json");
     let message = scratch.message(
         "json",
         "Add the parser\n\nCo-authored-by: Claude <noreply@anthropic.com>\n",
     );
 
+    let output = run_verify(&scratch, &message, &["--json"]);
+    let document = json_body(&output);
+
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    assert_one_match_document(&document);
+    assert!(
+        document.contains("\"id\":\"co-authored-by.claude\""),
+        "{document}"
+    );
+    assert!(
+        document.contains("\"description\":\"Co-authored-by trailer naming Claude\""),
+        "{document}"
+    );
+    assert!(document.contains("\"target\":\"trailer\""), "{document}");
+    assert!(
+        document.contains("\"value\":\"Claude <noreply@anthropic.com>\""),
+        "{document}"
+    );
+    assert!(
+        document.contains("\"line\":3}"),
+        "the message line number, as a number: {document}"
+    );
+    assert!(
+        !stdout(&output).contains("attribution detected"),
+        "the flag replaces the block, it does not add to it: {document}"
+    );
+    assert!(
+        stderr(&output).is_empty(),
+        "a document is not a diagnostic: {}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn json_reports_one_object_per_match() {
+    let scratch = Scratch::new("json-three");
+    let message = scratch.message(
+        "json-three",
+        "Add the parser\n\n\
+         Co-authored-by: Claude <noreply@anthropic.com>\n\
+         Made-with: Cursor\n\
+         \u{1f916} Generated with Amp\n",
+    );
+
+    let output = run_verify(&scratch, &message, &["--json"]);
+    let document = json_body(&output);
+
+    assert_eq!(output.status.code(), Some(1), "stderr: {}", stderr(&output));
+    assert_eq!(
+        document.matches("\"id\":").count(),
+        3,
+        "three matches, three objects: {document}"
+    );
+    for id in [
+        "co-authored-by.claude",
+        "made-with",
+        "free-form-footer.emoji",
+    ] {
+        assert!(
+            document.contains(&format!("\"id\":\"{id}\"")),
+            "{id}: {document}"
+        );
+    }
+    // spec §5.3's line numbers, so the document is the report and not a summary.
+    for line in ["\"line\":3}", "\"line\":4}", "\"line\":5}"] {
+        assert!(document.contains(line), "{line}: {document}");
+    }
+}
+
+#[test]
+fn json_and_the_human_block_agree_on_the_exit_status() {
+    // spec §5.4: "Exit codes do not change". Both formats over the same bytes.
+    let scratch = Scratch::new("json-status");
+    let ident = [
+        "--author",
+        "Ada Lovelace <ada@example.com>",
+        "--committer",
+        "Ada Lovelace <ada@example.com>",
+    ];
+    for (name, bytes, expected) in [
+        ("clean", "Add the parser\n\nBody\n", Some(0)),
+        (
+            "match",
+            "Add the parser\n\nCo-authored-by: Claude <noreply@anthropic.com>\n",
+            Some(1),
+        ),
+    ] {
+        let message = scratch.message(name, bytes);
+        let human = run_verify(&scratch, &message, &ident);
+        let mut json_args = vec!["--json"];
+        json_args.extend(ident);
+        let json = run_verify(&scratch, &message, &json_args);
+
+        assert_eq!(human.status.code(), expected, "{name}: {}", stderr(&human));
+        assert_eq!(
+            json.status.code(),
+            human.status.code(),
+            "{name}: the flag changes the format, not the status: {}",
+            stderr(&json)
+        );
+    }
+}
+
+#[test]
+fn json_of_a_clean_message_is_an_empty_document_and_exits_0() {
+    // The deliberate divergence from the human path, which writes nothing at
+    // all: an empty `matches` array is how a CI consumer tells "found nothing"
+    // from "did not run".
+    let scratch = Scratch::new("json-clean");
+    let message = scratch.message("json-clean", "Add the parser\n\nBody\n");
+
     let output = run_verify(&scratch, &message, &["--json", "-v"]);
+
+    assert_eq!(output.status.code(), Some(0), "stderr: {}", stderr(&output));
+    assert_eq!(
+        json_body(&output),
+        "{\"matches\":[]}",
+        "valid JSON, and not silence"
+    );
+}
+
+#[test]
+fn json_v_keeps_the_skip_notes_off_stdout() {
+    // spec §6: every diagnostic goes to stderr, so `-v` cannot corrupt the
+    // document a consumer parses.
+    let scratch = outside_a_repository("json-verbose");
+    let message = scratch.message(
+        "json-verbose",
+        "Add the parser\n\nCo-authored-by: Claude <noreply@anthropic.com>\n",
+    );
+
+    let output = run_verify(&scratch, &message, &["--json", "-v"]);
+    let document = json_body(&output);
     let notes = stderr(&output);
 
-    assert_eq!(output.status.code(), Some(2), "{notes}");
+    assert_eq!(output.status.code(), Some(1), "{notes}");
+    assert!(
+        json_body(&output).starts_with("{\"matches\":["),
+        "stdout is the document alone: {document}"
+    );
+    assert!(!document.contains("skipping"), "{document}");
+    assert!(notes.contains("skipping"), "{notes}");
+}
+
+#[test]
+fn json_writes_nothing_to_stdout_when_the_message_file_is_missing() {
+    // Done when: "An error path writes nothing to stdout, so JSON consumers
+    // never see a partial document."
+    let scratch = Scratch::new("json-missing-message");
+    let absent = scratch.join("does-not-exist.txt");
+
+    let output = run_verify(&scratch, &absent, &["--json"]);
+
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
     assert!(
         output.stdout.is_empty(),
-        "a rejected flag prints no report: {:?}",
+        "zero bytes, not even `{{\"matches\":[]}}`: {:?}",
         stdout(&output)
     );
     assert!(
-        notes.contains("--json") && notes.contains("unexpected"),
-        "the usage error names the flag: {notes}"
+        stderr(&output).contains(&absent.display().to_string()),
+        "{}",
+        stderr(&output)
     );
+}
+
+#[test]
+fn json_writes_nothing_to_stdout_when_the_config_is_broken() {
+    let scratch = Scratch::new("json-bad-config");
+    let message = scratch.message("json-bad-config", "Add the parser\n");
+    let config = scratch.join("broken.toml");
+    fs::write(&config, "not = [valid").expect("writing the broken config");
+
+    let config_flag = config.display().to_string();
+    let mut owned = vec!["--config".to_owned(), config_flag];
+    owned.extend(args(&message, &["--json"]));
+    let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+
+    let output = run(&scratch.path, &scratch, &borrowed, None, None);
+
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(
+        output.stdout.is_empty(),
+        "an error is not an empty match list: {:?}",
+        stdout(&output)
+    );
+    assert!(
+        stderr(&output).contains(&config.display().to_string()),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn json_of_an_identity_match_carries_a_null_line() {
+    // spec §5.3: an identity has no message line, and the key stays present so a
+    // consumer can rely on a stable set.
+    let scratch = Scratch::new("json-identity");
+    let message = scratch.message("json-identity", "Add the parser\n");
+
+    let output = run_verify(
+        &scratch,
+        &message,
+        &[
+            "--json",
+            "--author",
+            "Cursor <dev@cursor.com>",
+            "--committer",
+            "Ada Lovelace <ada@example.com>",
+        ],
+    );
+    let document = json_body(&output);
+
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    assert!(document.contains("\"target\":\"author\""), "{document}");
+    assert!(document.contains("\"line\":null}"), "{document}");
+}
+
+#[test]
+fn json_escapes_a_value_that_carries_json_metacharacters() {
+    // A whole line is a value, so a quote or a backslash in the message reaches
+    // the emitter. The document must stay parseable: the raw characters never
+    // appear inside a string.
+    let scratch = Scratch::new("json-escapes");
+    // The line names Claude, so `free-form-footer.tool` reports it whole.
+    let message = scratch.message(
+        "json-escapes",
+        "Add the parser\n\nGenerated with Claude \"quoted\" \\ backslash\n",
+    );
+
+    let output = run_verify(&scratch, &message, &["--json"]);
+    let document = json_body(&output);
+
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    assert!(
+        document.contains("\"value\":\"Generated with Claude \\\"quoted\\\" \\\\ backslash\""),
+        "{document}"
+    );
+    // Crude but exact for this fixture: the document holds no raw quote inside a
+    // value, and the counts of the escaped forms are what the input had.
+    assert_eq!(document.matches("\\\"").count(), 2, "{document}");
+    assert_eq!(document.matches("\\\\").count(), 1, "{document}");
 }
 
 #[test]

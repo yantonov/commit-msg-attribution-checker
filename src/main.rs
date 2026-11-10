@@ -41,6 +41,10 @@ enum Commands {
         /// Report the identity targets that were skipped
         #[arg(short, long)]
         verbose: bool,
+
+        /// Write the matches as JSON instead of the report block
+        #[arg(long)]
+        json: bool,
     },
 
     /// Inspect or write the configuration
@@ -80,6 +84,7 @@ fn main() -> ExitCode {
             author,
             committer,
             verbose,
+            json,
         } => commands::verify(
             &msg_file,
             cli.config,
@@ -87,6 +92,7 @@ fn main() -> ExitCode {
             // never reads itself, which is what makes them testable.
             &identity::Inputs::new(author.as_deref(), committer.as_deref()),
             verbose,
+            json,
         ),
         Commands::Config {
             action: ConfigAction::Defaults,
