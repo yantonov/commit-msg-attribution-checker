@@ -1,4 +1,5 @@
 ---
+title: "Minimal harness: AGENTS.md and Makefile"
 status: closed
 priority: 1
 deps: [app-placeholder]

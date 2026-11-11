@@ -1,4 +1,5 @@
 ---
+title: "Hook integration and smoke test"
 status: closed
 priority: 3
 deps: [cmd-verify]

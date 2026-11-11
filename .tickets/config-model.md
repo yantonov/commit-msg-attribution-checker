@@ -1,4 +1,5 @@
 ---
+title: "Config model and schema validation"
 status: closed
 priority: 1
 deps: [app-placeholder]

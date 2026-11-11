@@ -1,4 +1,5 @@
 ---
+title: "verify command: human output and exit codes"
 status: closed
 priority: 2
 deps: [config-resolution, match-engine]

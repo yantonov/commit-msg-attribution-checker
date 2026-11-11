@@ -1,4 +1,5 @@
 ---
+title: "Identity targets via git var"
 status: closed
 priority: 2
 deps: [match-engine]

@@ -1,4 +1,5 @@
 ---
+title: "README: move Motivation below the table of contents"
 status: closed
 priority: 2
 deps: []

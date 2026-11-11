@@ -1,4 +1,5 @@
 ---
+title: "Config resolution order"
 status: closed
 priority: 1
 deps: [app-placeholder]

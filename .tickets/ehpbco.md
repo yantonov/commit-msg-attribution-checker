@@ -1,4 +1,5 @@
 ---
+title: "Decide whether aider.author-name should match a rendered ident"
 status: closed
 priority: 2
 deps: []

@@ -1,4 +1,5 @@
 ---
+title: "README: title the tool, fix the summary line, shorten Motivation"
 status: closed
 priority: 2
 deps: []

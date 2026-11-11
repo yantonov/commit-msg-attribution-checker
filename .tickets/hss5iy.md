@@ -1,4 +1,5 @@
 ---
+title: "Add a Motivation section to the README"
 status: closed
 priority: 2
 deps: []

@@ -1,4 +1,5 @@
 ---
+title: "config defaults"
 status: closed
 priority: 2
 deps: [default-patterns]

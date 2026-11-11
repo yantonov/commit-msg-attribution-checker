@@ -1,4 +1,5 @@
 ---
+title: "Document installing the hook through krok"
 status: closed
 priority: 2
 deps: []

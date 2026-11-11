@@ -1,4 +1,5 @@
 ---
+title: "Dogfood the checker on this repo"
 status: closed
 priority: 3
 deps: [hook-integration]

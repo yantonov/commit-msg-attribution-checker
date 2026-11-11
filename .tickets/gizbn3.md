@@ -1,4 +1,5 @@
 ---
+title: "Make install target: release artifact then install to ~/.local/bin"
 status: closed
 priority: 2
 deps: []

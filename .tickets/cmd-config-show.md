@@ -1,4 +1,5 @@
 ---
+title: "config show"
 status: closed
 priority: 2
 deps: [config-resolution]

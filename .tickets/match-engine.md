@@ -1,4 +1,5 @@
 ---
+title: "Match engine with trailer gate"
 status: closed
 priority: 1
 deps: [config-model, msg-parsing]

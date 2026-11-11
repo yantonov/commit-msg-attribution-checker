@@ -1,4 +1,5 @@
 ---
+title: "Default pattern registry"
 status: closed
 priority: 1
 deps: [config-model]

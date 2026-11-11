@@ -1,4 +1,5 @@
 ---
+title: "verify --json output"
 status: closed
 priority: 3
 deps: [cmd-verify]

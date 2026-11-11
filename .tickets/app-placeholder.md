@@ -1,4 +1,5 @@
 ---
+title: "App placeholder: cargo scaffold"
 status: closed
 priority: 0
 deps: []

@@ -1,4 +1,5 @@
 ---
+title: "End-to-end acceptance suite"
 status: closed
 priority: 2
 deps: [cmd-config-create, cmd-verify]

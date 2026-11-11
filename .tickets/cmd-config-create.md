@@ -1,4 +1,5 @@
 ---
+title: "config create"
 status: closed
 priority: 2
 deps: [cmd-config-defaults]
